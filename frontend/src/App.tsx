@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar, PageId } from './components/Sidebar';
+import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SystemsPage } from './pages/SystemsPage';
 import { JobsPage } from './pages/JobsPage';
@@ -26,6 +27,10 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  if (currentPage === 'login') {
+    return <LoginPage onLoginSuccess={() => setCurrentPage('dashboard')} />;
+  }
 
   return (
     <div

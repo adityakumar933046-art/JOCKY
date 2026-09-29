@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 export type PageId =
+  | 'login'
   | 'dashboard'
   | 'systems'
   | 'jobs'
@@ -127,9 +128,25 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
       </nav>
 
       {/* Footer Info */}
-      <div style={{ padding: '16px 20px', borderTop: '1px solid #1e293b', fontSize: '12px', color: '#64748b' }}>
+      <div style={{ padding: '16px 20px', borderTop: '1px solid #1e293b', fontSize: '12px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <div>JOCKY Platform v1.0.0</div>
-        <div>Analyst Mode: Active</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Analyst Mode: Active</span>
+          <button
+            onClick={() => onNavigate('login')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#38bdf8',
+              cursor: 'pointer',
+              fontSize: '11px',
+              textDecoration: 'underline',
+              padding: 0,
+            }}
+          >
+            Switch User
+          </button>
+        </div>
       </div>
     </aside>
   );
