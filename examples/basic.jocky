@@ -1,0 +1,14 @@
+# JOCKY Basic Example Script
+# Forensic digital-investigation pipeline
+
+SYSTEM INFO
+
+SCAN PROCESSES
+SCAN NETWORK
+SCAN DRIVERS
+
+ANALYZE PERSISTENCE
+ANALYZE MEMORY
+ANALYZE NETWORK
+
+REPORT "forensic_report"
