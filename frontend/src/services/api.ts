@@ -42,6 +42,12 @@ export const getApiBaseUrl = (): string => {
     }
     return url;
   }
+
+  // 3. Smart fallback when deployed on Vercel: use active HTTPS live cloud backend
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return 'https://plaintiff-robin-blanket-refer.trycloudflare.com/api/v1';
+  }
+
   return '/api/v1';
 };
 
@@ -89,11 +95,19 @@ export const handleResponse = async <T>(res: Response, fallbackError = 'Request 
     try {
       const errJson = await res.json();
       detail = errJson.detail || errJson.message || fallbackError;
-    } catch {}
+    } catch {
+      detail = `HTTP ${res.status}: ${res.statusText || fallbackError}`;
+    }
     throw new Error(detail);
   }
 
-  return res.json() as Promise<T>;
+  try {
+    return (await res.json()) as T;
+  } catch (parseErr: any) {
+    throw new Error(
+      'Backend response was not valid JSON. Please check backend connection in API Settings.'
+    );
+  }
 };
 
 export const getAuthToken = (): string | null => {
