@@ -87,6 +87,38 @@ def init_db():
             )
             db.add(analyst_user)
 
+        # Seed signer user
+        signer_user = db.query(UserModel).filter(UserModel.username == "signer").first()
+        if not signer_user:
+            signer_user = UserModel(
+                user_id="USR-SIGNER",
+                username="signer",
+                email="signer@jocky.local",
+                password_hash=hash_password("SignerSecure2026!"),
+                role="SIGNER",
+                organization_id=config.DEFAULT_ORG_ID,
+                is_active=True,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            db.add(signer_user)
+
+        # Seed verifier user
+        verifier_user = db.query(UserModel).filter(UserModel.username == "verifier").first()
+        if not verifier_user:
+            verifier_user = UserModel(
+                user_id="USR-VERIFIER",
+                username="verifier",
+                email="verifier@jocky.local",
+                password_hash=hash_password("VerifierSecure2026!"),
+                role="VERIFIER",
+                organization_id=config.DEFAULT_ORG_ID,
+                is_active=True,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            db.add(verifier_user)
+
         db.commit()
     except Exception as e:
         db.rollback()

@@ -13,6 +13,7 @@ from compiler.ast import (
     ScanCommand,
     AnalyzeCommand,
     ReportCommand,
+    DetectCommand,
 )
 
 
@@ -93,12 +94,46 @@ class Parser:
             return self._parse_analyze()
         elif current.type == TokenType.REPORT:
             return self._parse_report()
+        elif current.type == TokenType.DETECT:
+            return self._parse_detect()
+        elif current.type == TokenType.SYSTEM_INFO:
+            tok = self._advance()
+            return SystemInfoCommand(line=tok.line, column=tok.column)
+        elif current.type == TokenType.PROCESS_SCAN:
+            tok = self._advance()
+            return ScanCommand(target="PROCESSES", line=tok.line, column=tok.column)
+        elif current.type == TokenType.NETWORK_SCAN:
+            tok = self._advance()
+            return ScanCommand(target="NETWORK", line=tok.line, column=tok.column)
+        elif current.type == TokenType.SERVICE_SCAN:
+            tok = self._advance()
+            return ScanCommand(target="SERVICES", line=tok.line, column=tok.column)
+        elif current.type == TokenType.DRIVER_SCAN:
+            tok = self._advance()
+            return ScanCommand(target="DRIVERS", line=tok.line, column=tok.column)
+        elif current.type == TokenType.PERSISTENCE_SCAN:
+            tok = self._advance()
+            return AnalyzeCommand(target="PERSISTENCE", line=tok.line, column=tok.column)
+        elif current.type == TokenType.MEMORY_SCAN:
+            tok = self._advance()
+            return AnalyzeCommand(target="MEMORY", line=tok.line, column=tok.column)
+        elif current.type == TokenType.FILE_SCAN:
+            tok = self._advance()
+            return ScanCommand(target="FILES", line=tok.line, column=tok.column)
         else:
             raise ParserError(
                 f"Unexpected command or token '{current.value}' (type {current.type.name})",
                 current.line,
                 current.column,
             )
+
+    def _parse_detect(self) -> DetectCommand:
+        detect_tok = self._advance()
+        target_tok = self._peek()
+        if target_tok.type in (TokenType.THREATS, TokenType.IDENTIFIER):
+            self._advance()
+            return DetectCommand(target=target_tok.value.upper(), line=detect_tok.line, column=detect_tok.column)
+        return DetectCommand(target="THREATS", line=detect_tok.line, column=detect_tok.column)
 
     def _parse_system(self) -> SystemInfoCommand:
         sys_tok = self._advance()

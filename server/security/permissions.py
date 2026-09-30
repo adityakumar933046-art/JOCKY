@@ -25,6 +25,8 @@ class Permissions:
 
     EVIDENCE_READ = "evidence.read"
     EVIDENCE_EXPORT = "evidence.export"
+    EVIDENCE_SIGN = "evidence.sign"
+    EVIDENCE_VERIFY = "evidence.verify"
 
     FINDINGS_READ = "findings.read"
 
@@ -34,6 +36,7 @@ class Permissions:
 
     REPORTS_READ = "reports.read"
     REPORTS_GENERATE = "reports.generate"
+    REPORTS_SIGN = "reports.sign"
 
     AUDIT_READ = "audit.read"
 
@@ -50,6 +53,8 @@ class Roles:
     SUPER_ADMIN = "SUPER_ADMIN"
     ORGANIZATION_ADMIN = "ORGANIZATION_ADMIN"
     SECURITY_ANALYST = "SECURITY_ANALYST"
+    SIGNER = "SIGNER"
+    VERIFIER = "VERIFIER"
     INVESTIGATOR = "INVESTIGATOR"
     VIEWER = "VIEWER"
 
@@ -96,17 +101,40 @@ ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.JOBS_CREATE,
         Permissions.EVIDENCE_READ,
         Permissions.EVIDENCE_EXPORT,
+        Permissions.EVIDENCE_SIGN,
+        Permissions.EVIDENCE_VERIFY,
         Permissions.FINDINGS_READ,
         Permissions.INVESTIGATIONS_READ,
         Permissions.INVESTIGATIONS_CREATE,
         Permissions.INVESTIGATIONS_UPDATE,
         Permissions.REPORTS_READ,
         Permissions.REPORTS_GENERATE,
+        Permissions.REPORTS_SIGN,
         Permissions.SECURITY_READ,
         Permissions.ARTIFACTS_READ,
         Permissions.INDICATORS_READ,
         Permissions.CORRELATION_READ,
         Permissions.CORRELATION_RUN,
+    },
+
+    Roles.SIGNER: {
+        Permissions.EVIDENCE_READ,
+        Permissions.EVIDENCE_EXPORT,
+        Permissions.EVIDENCE_SIGN,
+        Permissions.REPORTS_READ,
+        Permissions.REPORTS_GENERATE,
+        Permissions.REPORTS_SIGN,
+        Permissions.INVESTIGATIONS_READ,
+        Permissions.AUDIT_READ,
+    },
+
+    Roles.VERIFIER: {
+        Permissions.EVIDENCE_READ,
+        Permissions.EVIDENCE_EXPORT,
+        Permissions.EVIDENCE_VERIFY,
+        Permissions.REPORTS_READ,
+        Permissions.INVESTIGATIONS_READ,
+        Permissions.AUDIT_READ,
     },
 
     Roles.INVESTIGATOR: {

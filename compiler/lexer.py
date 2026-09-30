@@ -24,6 +24,18 @@ class TokenType(Enum):
     MEMORY = auto()
     REPORT = auto()
 
+    # Extended forensic command tokens
+    SYSTEM_INFO = auto()
+    PROCESS_SCAN = auto()
+    NETWORK_SCAN = auto()
+    SERVICE_SCAN = auto()
+    DRIVER_SCAN = auto()
+    PERSISTENCE_SCAN = auto()
+    MEMORY_SCAN = auto()
+    FILE_SCAN = auto()
+    DETECT = auto()
+    THREATS = auto()
+
     # Literals & Identifiers
     IDENTIFIER = auto()
     STRING = auto()
@@ -46,6 +58,16 @@ KEYWORDS = {
     "PERSISTENCE": TokenType.PERSISTENCE,
     "MEMORY": TokenType.MEMORY,
     "REPORT": TokenType.REPORT,
+    "SYSTEM_INFO": TokenType.SYSTEM_INFO,
+    "PROCESS_SCAN": TokenType.PROCESS_SCAN,
+    "NETWORK_SCAN": TokenType.NETWORK_SCAN,
+    "SERVICE_SCAN": TokenType.SERVICE_SCAN,
+    "DRIVER_SCAN": TokenType.DRIVER_SCAN,
+    "PERSISTENCE_SCAN": TokenType.PERSISTENCE_SCAN,
+    "MEMORY_SCAN": TokenType.MEMORY_SCAN,
+    "FILE_SCAN": TokenType.FILE_SCAN,
+    "DETECT": TokenType.DETECT,
+    "THREATS": TokenType.THREATS,
 }
 
 
@@ -105,8 +127,15 @@ class Lexer:
                 self._advance()
                 continue
 
-            # Comments start with '#'
+            # Comments start with '#' or '//'
             if char == '#':
+                while self._peek() is not None and self._peek() != '\n':
+                    self._advance()
+                continue
+
+            if char == '/' and self._peek(1) == '/':
+                self._advance()
+                self._advance()
                 while self._peek() is not None and self._peek() != '\n':
                     self._advance()
                 continue

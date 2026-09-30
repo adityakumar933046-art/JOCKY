@@ -1,0 +1,22 @@
+// JOCKY Comprehensive Forensic Investigation Script
+// Demonstrates all defensive commands and threat detection
+
+SYSTEM_INFO
+
+PROCESS_SCAN
+
+NETWORK_SCAN
+
+SERVICE_SCAN
+
+DRIVER_SCAN
+
+PERSISTENCE_SCAN
+
+MEMORY_SCAN
+
+FILE_SCAN
+
+DETECT
+
+REPORT "complete_forensic_assessment"

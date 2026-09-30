@@ -1,6 +1,6 @@
 # JOCKY — Digital Forensics Programming Language & Investigation Platform
 
-[![Tests](https://img.shields.io/badge/Tests-127%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-135%20Passed-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/Python-3.13-blue.svg)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal.svg)]()
 [![React](https://img.shields.io/badge/React-18-cyan.svg)]()
@@ -326,22 +326,25 @@ The platform maintains a clear separation between observable evidence, derived r
 
 ## 9. Security Model & Defensive Scope
 
-### Defensive Scope Statement
-JOCKY is strictly an **authorized digital forensics and incident response** tool.
-- **NO process injection** (no CreateRemoteThread, WriteProcessMemory, NtWriteVirtualMemory)
-- **NO process hollowing or reflective DLL injection**
-- **NO thread hijacking, API unhooking, or direct syscall evasion**
-- **NO BYOVD exploitation or driver weaponization**
-- **NO EDR/AV disabling or security-control bypass**
-- **NO persistence creation or privilege escalation**
-- **NO arbitrary remote shell or command execution**
+### RBAC Roles & Capabilities
+The platform defines 7 distinct roles enforcing strict separation of duties:
+1. **Super Admin (`SUPER_ADMIN`)**: Complete platform governance, tenant provisioning, security configuration, agent revocation, and cryptographic trust delegation.
+2. **Organization Admin (`ORGANIZATION_ADMIN`)**: Scoped user management, agent lifecycle management (approve, suspend, revoke), and organization-wide job/investigation orchestration.
+3. **Security Analyst (`SECURITY_ANALYST`)**: Job creation, real read-only forensic triage dispatch, evidence inspection, threat analysis, correlation analysis, and case reporting.
+4. **Forensic Signer (`SIGNER`)**: Cryptographic evidence signing, chain-of-custody seal attestation, and formal report sign-off.
+5. **Evidence Verifier (`VERIFIER`)**: Independent hash verification of evidence records, verification of custody chains and audit ledger cryptographic proofs.
+6. **Investigator (`INVESTIGATOR`)**: Case notes recording, artifact pinning, snapshot freezing, and collaborative incident triage.
+7. **Auditor / Viewer (`VIEWER`)**: Read-only oversight of audit trails, evidence logs, and forensic timelines without execution permissions.
 
 ### IR Allow-List Guarantee
 Agents only execute pre-authorized, read-only forensic collection opcodes validated by the compiler:
-- `SYSTEM_INFO`
-- `SCAN` (`PROCESSES`, `NETWORK`, `FILES`, `DRIVERS`, `SERVICES`)
-- `ANALYZE` (`PERSISTENCE`, `MEMORY`, `NETWORK`)
-- `REPORT` (`<report_name>`)
+- `SYSTEM_INFO`: Host, OS, CPU, memory, and user metadata collection.
+- `SCAN` (`PROCESSES`, `NETWORK`, `FILES`, `DRIVERS`, `SERVICES`): Read-only OS enumeration.
+- `ANALYZE` (`PERSISTENCE`, `MEMORY`, `NETWORK`): Safe non-destructive artifact analysis.
+- `DETECT` (`THREATS`): Rule-based deterministic detection engine execution.
+- `REPORT` (`<report_name>`): Cryptographic report consolidation and local persistence.
+
+Direct command forms (`PROCESS_SCAN`, `NETWORK_SCAN`, `SERVICE_SCAN`, `DRIVER_SCAN`, `PERSISTENCE_SCAN`, `MEMORY_SCAN`, `FILE_SCAN`, `SYSTEM_INFO`, `DETECT`) and `#` / `//` comments are fully supported.
 
 Any script containing unrecognized opcodes, shell invocations, or injection keywords is rejected immediately with a 400 Bad Request error.
 

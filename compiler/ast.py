@@ -53,3 +53,10 @@ class AnalyzeCommand(CommandNode):
 class ReportCommand(CommandNode):
     """Represents 'REPORT "<report_name>"' command."""
     target: str = ""
+
+
+@dataclass
+class DetectCommand(CommandNode):
+    """Represents 'DETECT' or 'DETECT THREATS' command."""
+    target: str = "THREATS"
+

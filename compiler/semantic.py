@@ -15,6 +15,7 @@ from compiler.ast import (
     ScanCommand,
     AnalyzeCommand,
     ReportCommand,
+    DetectCommand,
 )
 
 
@@ -96,6 +97,17 @@ class SemanticAnalyzer:
                 else:
                     evidence_collected = True
                 current_signature = ("ANALYZE", target)
+
+            elif isinstance(stmt, DetectCommand):
+                if not evidence_collected:
+                    self.errors.append(
+                        SemanticError(
+                            "Invalid command combination: Cannot execute DETECT before any forensic collection has taken place.",
+                            stmt.line,
+                            stmt.column,
+                        )
+                    )
+                current_signature = ("DETECT", stmt.target)
 
             elif isinstance(stmt, ReportCommand):
                 report_count += 1

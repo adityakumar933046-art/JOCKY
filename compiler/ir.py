@@ -14,6 +14,7 @@ from compiler.ast import (
     ScanCommand,
     AnalyzeCommand,
     ReportCommand,
+    DetectCommand,
 )
 
 
@@ -57,6 +58,10 @@ class IRGenerator:
             elif isinstance(stmt, ReportCommand):
                 instructions.append(
                     IRInstruction(opcode="REPORT", target=stmt.target, line=stmt.line)
+                )
+            elif isinstance(stmt, DetectCommand):
+                instructions.append(
+                    IRInstruction(opcode="DETECT", target=stmt.target, line=stmt.line)
                 )
             else:
                 raise ValueError(f"Unknown AST node during IR generation: {type(stmt).__name__}")

@@ -92,6 +92,8 @@ class ForensicInterpreter:
                 self._log(f"→ Analyze {target_name}")
             elif inst.opcode == "REPORT":
                 self._log(f"→ Generate report: {inst.target}")
+            elif inst.opcode == "DETECT":
+                self._log("→ Run threat detection engine")
             else:
                 self._log(f"→ Unknown instruction: {inst.opcode}")
 
@@ -191,6 +193,10 @@ class ForensicInterpreter:
                     self._log(f"→ Generating report: {report_name}... ", end_char="")
                     self.evidence_store.save_report(report_name, self.records)
                     self._log("OK")
+
+                elif inst.opcode == "DETECT":
+                    self.enable_detection = True
+                    self._log("→ Enqueued threat detection analysis... OK")
 
                 if rec:
                     self.records.append(rec)

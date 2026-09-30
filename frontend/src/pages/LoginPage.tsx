@@ -157,14 +157,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #1e293b' }}>
           <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Quick Demo Accounts
+            Quick Demo Accounts & Roles
           </p>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
             <button
               type="button"
               onClick={() => setCredentials('admin', 'AdminSecure2026!')}
               style={{
-                flex: 1,
                 padding: '0.5rem',
                 backgroundColor: '#1e293b',
                 color: '#93c5fd',
@@ -180,7 +179,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               type="button"
               onClick={() => setCredentials('analyst', 'AnalystSecure2026!')}
               style={{
-                flex: 1,
                 padding: '0.5rem',
                 backgroundColor: '#1e293b',
                 color: '#6ee7b7',
@@ -191,6 +189,36 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               }}
             >
               Security Analyst
+            </button>
+            <button
+              type="button"
+              onClick={() => setCredentials('signer', 'SignerSecure2026!')}
+              style={{
+                padding: '0.5rem',
+                backgroundColor: '#1e293b',
+                color: '#fcd34d',
+                border: '1px solid #334155',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+              }}
+            >
+              Forensic Signer
+            </button>
+            <button
+              type="button"
+              onClick={() => setCredentials('verifier', 'VerifierSecure2026!')}
+              style={{
+                padding: '0.5rem',
+                backgroundColor: '#1e293b',
+                color: '#c084fc',
+                border: '1px solid #334155',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+              }}
+            >
+              Evidence Verifier
             </button>
           </div>
         </div>
