@@ -1,0 +1,44 @@
+# ==============================================================================
+# JOCKY Central Forensic Platform - Render Blueprint Specification
+# Deploys:
+#   1. jocky-backend: FastAPI ASGI Backend Web Service
+#   2. jocky-postgres: Managed PostgreSQL Production Database
+# ==============================================================================
+
+services:
+  - type: web
+    name: jocky-backend
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: "pip install -r requirements.txt && python -m scripts.init_production_db"
+    startCommand: "uvicorn server.main:app --host 0.0.0.0 --port $PORT --workers 2"
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jocky-postgres
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "120"
+      - key: JOCKY_PBKDF2_ITERATIONS
+        value: "310000"
+
+databases:
+  - name: jocky-postgres
+    databaseName: jocky
+    user: jocky_admin
+    plan: free
+    region: oregon
