@@ -9,7 +9,10 @@ import {
   FileText,
   Shield,
   Share2,
+  LogOut,
+  UserCheck,
 } from 'lucide-react';
+import { removeAuthToken } from '../services/api';
 
 export type PageId =
   | 'login'
@@ -42,6 +45,24 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
     { id: 'security', label: 'Security Ops', icon: <Shield size={18} /> },
     { id: 'audit', label: 'Audit Ledger', icon: <FileSearch size={18} /> },
   ];
+
+  let currentUsername = 'analyst';
+  let currentRole = 'Security Analyst';
+  try {
+    const rawUser = localStorage.getItem('jocky_user');
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      if (u.username) currentUsername = u.username;
+      if (u.role) {
+        currentRole = u.role.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase());
+      }
+    }
+  } catch {}
+
+  const handleLogout = () => {
+    removeAuthToken();
+    onNavigate('login');
+  };
 
   return (
     <aside
@@ -90,7 +111,7 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
       </div>
 
       {/* Navigation Links */}
-      <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto' }}>
         {navItems.map((item) => {
           const isActive = currentPage === item.id;
           return (
@@ -127,25 +148,77 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
         })}
       </nav>
 
-      {/* Footer Info */}
-      <div style={{ padding: '16px 20px', borderTop: '1px solid #1e293b', fontSize: '12px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div>JOCKY Platform v1.0.0</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Analyst Mode: Active</span>
-          <button
-            onClick={() => onNavigate('login')}
+      {/* Footer User Info & Logout Button */}
+      <div
+        style={{
+          padding: '16px 16px',
+          borderTop: '1px solid #1e293b',
+          fontSize: '12px',
+          color: '#94a3b8',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
             style={{
-              background: 'none',
-              border: 'none',
+              width: '28px',
+              height: '28px',
+              borderRadius: '50%',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               color: '#38bdf8',
-              cursor: 'pointer',
-              fontSize: '11px',
-              textDecoration: 'underline',
-              padding: 0,
             }}
           >
-            Switch User
-          </button>
+            <UserCheck size={16} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {currentUsername}
+            </div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>
+              {currentRole}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Sign out and return to Gateway Portal"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            width: '100%',
+            padding: '9px 12px',
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            borderRadius: '6px',
+            color: '#f87171',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.22)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+          }}
+        >
+          <LogOut size={14} />
+          <span>Logout / Switch Role</span>
+        </button>
+
+        <div style={{ fontSize: '10px', color: '#475569', textAlign: 'center' }}>
+          JOCKY Platform v1.0.0
         </div>
       </div>
     </aside>

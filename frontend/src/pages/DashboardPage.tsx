@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, getApiBaseUrl, setApiBaseUrl } from '../services/api';
+import { api, getApiBaseUrl, setApiBaseUrl, removeAuthToken } from '../services/api';
 import { Agent, Job, Finding, EvidenceRecord } from '../types/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { Header } from '../components/Header';
@@ -82,6 +82,10 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         subtitle="Central multi-system triage, evidence collection, and threat detection"
         onRefresh={loadData}
         loading={loading}
+        onLogout={() => {
+          removeAuthToken();
+          onNavigate('login');
+        }}
       />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>

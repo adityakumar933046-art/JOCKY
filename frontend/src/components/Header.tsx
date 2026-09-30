@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, ShieldCheck, Search, Globe } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Search, Globe, LogOut } from 'lucide-react';
 import { getApiBaseUrl } from '../services/api';
 import { ApiConfigModal } from './ApiConfigModal';
 
@@ -10,6 +10,7 @@ interface Props {
   loading?: boolean;
   action?: React.ReactNode;
   onSearchClick?: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<Props> = ({
@@ -19,6 +20,7 @@ export const Header: React.FC<Props> = ({
   loading = false,
   action,
   onSearchClick,
+  onLogout,
 }) => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const currentBase = getApiBaseUrl();
@@ -148,6 +150,37 @@ export const Header: React.FC<Props> = ({
               }}
             />
             <span>Refresh</span>
+          </button>
+        )}
+
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            title="Log out and return to Gateway Portal"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 12px',
+              borderRadius: '6px',
+              border: '1px solid #fecaca',
+              backgroundColor: '#fef2f2',
+              color: '#dc2626',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#fee2e2';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#fef2f2';
+            }}
+          >
+            <LogOut size={14} />
+            <span>Logout</span>
           </button>
         )}
       </div>
