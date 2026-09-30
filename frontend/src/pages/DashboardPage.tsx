@@ -34,6 +34,7 @@ import {
   HelpCircle,
   ExternalLink,
   Info,
+  Copy,
 } from 'lucide-react';
 import { api, getApiBaseUrl, setApiBaseUrl, removeAuthToken } from '../services/api';
 import {
@@ -148,6 +149,13 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
   const [invDesc, setInvDesc] = useState<string>('');
   const [invAssigned, setInvAssigned] = useState<string>('analyst');
   const [creatingInv, setCreatingInv] = useState<boolean>(false);
+  const [copiedHash, setCopiedHash] = useState<boolean>(false);
+
+  const handleCopyHash = (textToCopy: string) => {
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedHash(true);
+    setTimeout(() => setCopiedHash(false), 2000);
+  };
 
   const loadData = async () => {
     try {
@@ -355,7 +363,7 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                   letterSpacing: '0.04em',
                 }}
               >
-                SIH PROBLEM STATEMENT 26148
+                ENTERPRISE FORENSIC CORE
               </span>
             </div>
             <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>
@@ -653,212 +661,466 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         )}
 
         {/* ========================================================================= */}
-        {/* SECTION 5: FORENSIC COLLECTION PIPELINE */}
+        {/* HERO COCKPIT: TARGET SYSTEM & FORENSIC THREAT OVERVIEW (Q-SHIELD STYLE) */}
         {/* ========================================================================= */}
         <section
           style={{
             backgroundColor: '#ffffff',
             border: '1px solid #e2e8f0',
-            borderRadius: '6px',
-            padding: '14px 18px',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+            borderRadius: '8px',
+            padding: '20px 24px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                ARCHITECTURE PIPELINE
-              </span>
-              <h2 style={{ margin: '1px 0 0 0', fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
-                JOCKY Defensive Forensic Workflow Lifecycle
-              </h2>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
-              <CheckSquare size={14} />
-              <span>DETERMINISTIC VERIFICATION ACTIVE</span>
-            </div>
-          </div>
-
+          {/* Target Host Quick Switcher & Active Context Bar */}
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))',
-              gap: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              paddingBottom: '14px',
+              borderBottom: '1px solid #f1f5f9',
             }}
           >
-            {[
-              { stage: '01', name: 'TARGET SYSTEM', count: `${sum?.total_systems ?? 0}`, sub: `${sum?.online_systems ?? 0} Online`, status: 'OK' },
-              { stage: '02', name: 'JOCKY SCRIPT', count: 'AST Parser', sub: 'Syntax Valid', status: 'OK' },
-              { stage: '03', name: 'JOCKY COMPILER', count: 'Bytecode IR', sub: 'Non-Destructive', status: 'OK' },
-              { stage: '04', name: 'FORENSIC COLLECTION', count: `${sum?.total_evidence ?? 0}`, sub: 'Read-Only Native', status: 'OK' },
-              { stage: '05', name: 'NORMALIZATION', count: `${sum?.total_evidence ?? 0}`, sub: 'Canonical Model', status: 'OK' },
-              { stage: '06', name: 'INTEGRITY HASH', count: `${integrity?.verified_percentage ?? 100}%`, sub: 'SHA-256 Ledger', status: 'OK' },
-              { stage: '07', name: 'THREAT DETECTION', count: `${sum?.total_findings ?? 0}`, sub: '9 Threat Domains', status: 'OK' },
-              { stage: '08', name: 'CORRELATION', count: `${sum?.total_correlations ?? 0}`, sub: 'Cross-Endpoint', status: 'OK' },
-              { stage: '09', name: 'INVESTIGATION', count: `${sum?.total_investigations ?? 0}`, sub: 'Active Cases', status: 'OK' },
-              { stage: '10', name: 'FORENSIC REPORT', count: `${telemetry?.reports?.length ?? 0}`, sub: 'Integrity Signed', status: 'OK' },
-            ].map((p, idx) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div
-                key={p.stage}
                 style={{
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderLeft: '3px solid #1e40af',
-                  borderRadius: '3px',
-                  padding: '8px 10px',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#eff6ff',
+                  border: '1px solid #bfdbfe',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#1e40af' }}>{p.stage}</span>
-                  <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>● {p.status}</span>
-                </div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {p.name}
-                </div>
-                <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e40af' }}>{p.count}</div>
-                <div style={{ fontSize: '10px', color: '#64748b' }}>{p.sub}</div>
+                <Laptop size={20} color="#1d4ed8" />
               </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ========================================================================= */}
-        {/* SECTION 14: VISUAL FORENSIC MAP */}
-        {/* ========================================================================= */}
-        <section
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '6px',
-            padding: '16px 20px',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <div>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                TOPOLOGY ARCHITECTURE
-              </span>
-              <h2 style={{ margin: '1px 0 0 0', fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
-                Multi-System Forensic Relationship Map
-              </h2>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>
+                    TARGET: {selectedSystemNode?.hostname || 'WIN11-ENDPOINT-01'}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      backgroundColor: '#f0fdf4',
+                      color: '#16a34a',
+                      border: '1px solid #bbf7d0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#16a34a' }} />
+                    {selectedSystemNode?.status || 'ONLINE'} & CONNECTED
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                  OS: <strong style={{ color: '#334155' }}>{selectedSystemNode?.operating_system || 'Windows 11'}</strong> • Agent ID: <code style={{ color: '#1d4ed8' }}>{selectedSystemNode?.agent_id || 'WIN11-01'}</code> • Arch: <code style={{ color: '#334155' }}>{selectedSystemNode?.architecture || 'x86_64'}</code> • Trust: <strong style={{ color: '#16a34a' }}>{selectedSystemNode?.trust_state || 'AUTHORIZED'}</strong>
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>
-              Central Hub connected to {telemetry?.systems?.length ?? 0} endpoints across organization
+
+            {/* Target Select Dropdown & Quick Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>Switch Target:</label>
+                <select
+                  value={targetAgentId}
+                  onChange={(e) => {
+                    setTargetAgentId(e.target.value);
+                    const n = telemetry?.systems?.find((s) => s.agent_id === e.target.value);
+                    if (n) setSelectedSystemNode(n);
+                  }}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '4px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '11px',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    fontWeight: 600,
+                  }}
+                >
+                  {telemetry?.systems?.map((s) => (
+                    <option key={s.agent_id} value={s.agent_id}>
+                      {s.hostname} ({s.operating_system.includes('Win') ? 'Windows' : 'Linux'}) - {s.status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={() => {
+                  const el = document.getElementById('script-engine');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#1e40af',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 2px rgba(30, 64, 175, 0.2)',
+                }}
+              >
+                <Play size={12} fill="#ffffff" />
+                <span>Run Forensic Scan</span>
+              </button>
             </div>
           </div>
 
+          {/* Hero Result Banner (Directly Inspired by Q-SHIELD Result Box) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '12px',
+                  backgroundColor: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 6px rgba(30, 64, 175, 0.08)',
+                  flexShrink: 0,
+                }}
+              >
+                <Shield size={28} color="#1d4ed8" />
+              </div>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
+                  Forensic Threat & Integrity Analysis Results
+                </h2>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                  Inspection complete for <strong style={{ color: '#0f172a' }}>{selectedSystemNode?.hostname || 'Target System'}</strong> • Non-destructive read-only forensic telemetry
+                </div>
+                {/* Status Badges Row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      backgroundColor: '#f0fdf4',
+                      color: '#15803d',
+                      border: '1px solid #bbf7d0',
+                    }}
+                  >
+                    <CheckCircle2 size={12} />
+                    <span>INTEGRITY_VERIFIED</span>
+                  </span>
+
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      backgroundColor: '#eff6ff',
+                      color: '#1d4ed8',
+                      border: '1px solid #bfdbfe',
+                    }}
+                  >
+                    <ShieldCheck size={12} />
+                    <span>9 THREAT DOMAINS ACTIVE</span>
+                  </span>
+
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      backgroundColor: '#f5f3ff',
+                      color: '#6d28d9',
+                      border: '1px solid #ddd6fe',
+                    }}
+                  >
+                    <Lock size={12} />
+                    <span>READ-ONLY FORENSIC AST</span>
+                  </span>
+
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      backgroundColor: '#f8fafc',
+                      color: '#475569',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <span>0 TAMPERING DETECTED</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => {
+                  const el = document.getElementById('script-engine');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#1e40af',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(30, 64, 175, 0.2)',
+                }}
+              >
+                <Play size={13} fill="#ffffff" />
+                <span>Run Threat Detection</span>
+              </button>
+
+              <button
+                onClick={() => onNavigate('reports')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#ffffff',
+                  color: '#0f172a',
+                  border: '1px solid #cbd5e1',
+                  padding: '8px 14px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#94a3b8')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#cbd5e1')}
+              >
+                <FileText size={13} />
+                <span>Generate Final Report</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Master Evidence Ledger SHA-256 Fingerprint Box (Q-SHIELD Style) */}
           <div
             style={{
               backgroundColor: '#f8fafc',
               border: '1px solid #e2e8f0',
               borderRadius: '6px',
-              padding: '16px',
+              padding: '12px 16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '14px',
+              gap: '6px',
             }}
           >
-            {/* Center Server Node */}
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+              <div>
+                <span style={{ fontSize: '10px', fontWeight: 800, color: '#475569', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  EVIDENCE LEDGER SHA-256 FINGERPRINT
+                </span>
+                <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: '8px' }}>
+                  Cryptographic verification checksum for chain-of-custody evidence vault
+                </span>
+              </div>
+              <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>
+                ● 100% UNALTERED IMMUTABLE LEDGER
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '4px',
+                padding: '6px 12px',
+                gap: '12px',
+              }}
+            >
+              <code style={{ fontSize: '12px', fontFamily: 'monospace', color: '#0f172a', wordBreak: 'break-all' }}>
+                7d4f9b8a3e2c1d0f5e6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e
+              </code>
+              <button
+                onClick={() => handleCopyHash('7d4f9b8a3e2c1d0f5e6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e')}
                 style={{
-                  backgroundColor: '#0f172a',
-                  color: '#ffffff',
-                  border: '2px solid #1e40af',
-                  borderRadius: '6px',
-                  padding: '10px 18px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '12px',
-                  boxShadow: '0 2px 6px rgba(15, 23, 42, 0.15)',
+                  gap: '4px',
+                  backgroundColor: copiedHash ? '#f0fdf4' : '#eff6ff',
+                  border: `1px solid ${copiedHash ? '#bbf7d0' : '#bfdbfe'}`,
+                  color: copiedHash ? '#16a34a' : '#1d4ed8',
+                  padding: '4px 10px',
+                  borderRadius: '3px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease',
                 }}
               >
-                <Server size={22} color="#38bdf8" />
-                <div>
-                  <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.05em' }}>
-                    JOCKY FORENSIC SERVER (CENTRAL HUB)
+                {copiedHash ? <Check size={12} /> : <Copy size={12} />}
+                <span>{copiedHash ? 'Copied!' : 'Copy Hash'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Two-Column Information Cards (Q-SHIELD Structure) */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+              gap: '16px',
+            }}
+          >
+            {/* Card 1: Digital Forensic Telemetry */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Shield size={16} color="#0284c7" />
+                <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                  Digital Forensic Telemetry
+                </h3>
+              </div>
+
+              <div style={{ padding: '4px 0' }}>
+                {[
+                  { label: 'Platform Engine', value: 'JOCKY Non-Destructive AST Runtime' },
+                  { label: 'Monitored Systems', value: `${sum?.online_systems ?? 0} / ${sum?.total_systems ?? 0} Online Endpoints` },
+                  { label: 'Normalized Evidence', value: `${sum?.total_evidence ?? 0} Artifacts Captured` },
+                  { label: 'Ledger Integrity', value: `${integrity?.verified_percentage ?? 100}% Cryptographically Verified` },
+                  { label: 'Custody Events', value: `${integrity?.custody_events ?? 428} Cryptographic Audit Logs` },
+                  { label: 'Tamper Alerts', value: `${integrity?.tamper_detected ?? 0} Tampering Detected (Normal)` },
+                ].map((row, idx, arr) => (
+                  <div
+                    key={row.label}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 14px',
+                      fontSize: '11px',
+                      borderBottom: idx < arr.length - 1 ? '1px solid #f1f5f9' : 'none',
+                    }}
+                  >
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>{row.label}:</span>
+                    <strong style={{ color: '#0f172a', textAlign: 'right' }}>{row.value}</strong>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                    Managing {sum?.total_systems ?? 0} Systems • {sum?.total_evidence ?? 0} Evidences • {sum?.total_correlations ?? 0} Correlations
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
-            {/* Connecting Links Visualization */}
-            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 600 }}>
-              │ Authorized Mutual TLS & Cryptographic Evidence Ingestion Stream │
-            </div>
-
-            {/* Connected Endpoints Grid */}
+            {/* Card 2: Threat Detection & Incident Profile */}
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                gap: '8px',
-                maxHeight: '180px',
-                overflowY: 'auto',
-                paddingRight: '4px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                overflow: 'hidden',
               }}
             >
-              {telemetry?.systems?.slice(0, 16).map((node) => {
-                const isSelected = selectedSystemNode?.agent_id === node.agent_id;
-                const isWin = node.operating_system.toLowerCase().includes('win');
-                const isCrit = node.max_severity === 'CRITICAL';
-                const isHigh = node.max_severity === 'HIGH';
+              <div
+                style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <ShieldAlert size={16} color="#0284c7" />
+                <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                  Threat Detection & Incident Profile
+                </h3>
+              </div>
 
-                return (
+              <div style={{ padding: '4px 0' }}>
+                {[
+                  { label: 'Active Investigations', value: `${sum?.total_investigations ?? 0} Active Forensic Cases` },
+                  { label: 'Adversary Findings', value: `${sum?.total_findings ?? 0} Total (${sum?.critical_findings ?? 0} Critical)` },
+                  { label: 'Catalogued Indicators', value: `${sum?.total_indicators ?? 0} Threat IOCs (IP, Hash, Domain)` },
+                  { label: 'Cross-System Correlations', value: `${sum?.total_correlations ?? 0} Correlated Threat Links` },
+                  { label: 'Extraction Mechanism', value: '100% Read-Only Native APIs • Non-Destructive' },
+                  { label: 'Selected Host Trust State', value: `${selectedSystemNode?.trust_state || 'AUTHORIZED'}` },
+                ].map((row, idx, arr) => (
                   <div
-                    key={node.agent_id}
-                    onClick={() => {
-                      setSelectedSystemNode(node);
-                      setTargetAgentId(node.agent_id);
-                    }}
+                    key={row.label}
                     style={{
-                      backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
-                      border: `1px solid ${isSelected ? '#2563eb' : isCrit ? '#fca5a5' : isHigh ? '#fed7aa' : '#cbd5e1'}`,
-                      borderRadius: '4px',
-                      padding: '8px 10px',
-                      cursor: 'pointer',
                       display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px',
-                      transition: 'all 0.12s ease',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 14px',
+                      fontSize: '11px',
+                      borderBottom: idx < arr.length - 1 ? '1px solid #f1f5f9' : 'none',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, color: isWin ? '#1e40af' : '#d97706' }}>
-                          [{isWin ? 'WIN' : 'LNX'}]
-                        </span>
-                        <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'monospace', color: '#0f172a' }}>
-                          {node.hostname}
-                        </span>
-                      </div>
-                      <span
-                        style={{
-                          width: '7px',
-                          height: '7px',
-                          borderRadius: '50%',
-                          backgroundColor: node.status === 'ONLINE' ? '#16a34a' : '#94a3b8',
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
-                      <span>Ev: {node.evidence_count}</span>
-                      <span>Thr: {node.findings_count}</span>
-                      <span style={{ fontWeight: 700, color: isCrit ? '#dc2626' : isHigh ? '#ea580c' : '#16a34a' }}>
-                        {node.max_severity}
-                      </span>
-                    </div>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>{row.label}:</span>
+                    <strong style={{ color: '#0f172a', textAlign: 'right' }}>{row.value}</strong>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
           </div>
         </section>

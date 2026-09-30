@@ -39,18 +39,16 @@ interface Props {
 
 export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
   const navItems: Array<{ id: PageId; label: string; icon: React.ReactNode }> = [
-    { id: 'dashboard', label: 'COMMAND CENTER', icon: <LayoutDashboard size={16} /> },
-    { id: 'systems', label: 'SYSTEMS', icon: <Server size={16} /> },
-    { id: 'jobs', label: 'JOCKY SCRIPTS', icon: <Terminal size={16} /> },
-    { id: 'evidence', label: 'EVIDENCE', icon: <FileSearch size={16} /> },
-    { id: 'findings', label: 'FINDINGS', icon: <ShieldAlert size={16} /> },
-    { id: 'correlation', label: 'IOC INTELLIGENCE', icon: <Hash size={16} /> },
-    { id: 'correlation', label: 'CORRELATION', icon: <Share2 size={16} /> },
-    { id: 'investigations', label: 'TIMELINE', icon: <Clock size={16} /> },
-    { id: 'investigations', label: 'INVESTIGATIONS', icon: <FolderGit2 size={16} /> },
-    { id: 'reports', label: 'REPORTS', icon: <FileText size={16} /> },
-    { id: 'audit', label: 'AUDIT LOG', icon: <FileSpreadsheet size={16} /> },
-    { id: 'security', label: 'SETTINGS', icon: <Settings size={16} /> },
+    { id: 'dashboard', label: 'Command Center', icon: <LayoutDashboard size={16} /> },
+    { id: 'systems', label: 'Monitored Systems', icon: <Server size={16} /> },
+    { id: 'jobs', label: 'Forensic Scripts', icon: <Terminal size={16} /> },
+    { id: 'evidence', label: 'Evidence Vault', icon: <FileSearch size={16} /> },
+    { id: 'findings', label: 'Threat Incidents', icon: <ShieldAlert size={16} /> },
+    { id: 'correlation', label: 'Cross Correlation', icon: <Share2 size={16} /> },
+    { id: 'investigations', label: 'Investigations', icon: <FolderGit2 size={16} /> },
+    { id: 'reports', label: 'Forensic Reports', icon: <FileText size={16} /> },
+    { id: 'audit', label: 'Audit Ledger', icon: <FileSpreadsheet size={16} /> },
+    { id: 'security', label: 'Security & Settings', icon: <Settings size={16} /> },
   ];
 
   let currentUsername = 'analyst';
@@ -92,7 +90,7 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
       {/* Brand Header */}
       <div
         style={{
-          padding: '18px 16px',
+          padding: '16px 16px',
           display: 'flex',
           alignItems: 'center',
           gap: '10px',
@@ -113,15 +111,28 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
           <Shield size={20} color="#ffffff" />
         </div>
         <div>
-          <div style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '0.08em', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>JOCKY</span>
-            <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '3px', backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 700 }}>
-              SIH-26148
-            </span>
+          <div style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '0.08em', color: '#ffffff' }}>
+            JOCKY
           </div>
-          <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
+          <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
             FORENSIC ANALYSIS PLATFORM
           </div>
+        </div>
+      </div>
+
+      {/* Current Role Box (Q-SHIELD reference aesthetic) */}
+      <div
+        style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid #1e293b',
+          backgroundColor: '#0b1120',
+        }}
+      >
+        <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          CURRENT ROLE
+        </div>
+        <div style={{ fontSize: '12px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.04em', marginTop: '2px', textTransform: 'uppercase' }}>
+          {currentRole}
         </div>
       </div>
 
@@ -136,25 +147,12 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
           overflowY: 'auto',
         }}
       >
-        {navItems.map((item, idx) => {
-          const isActive = currentPage === item.id && (
-            (item.label === 'COMMAND CENTER' && currentPage === 'dashboard') ||
-            (item.label === 'SYSTEMS' && currentPage === 'systems') ||
-            (item.label === 'JOCKY SCRIPTS' && currentPage === 'jobs') ||
-            (item.label === 'EVIDENCE' && currentPage === 'evidence') ||
-            (item.label === 'FINDINGS' && currentPage === 'findings') ||
-            (item.label === 'CORRELATION' && currentPage === 'correlation') ||
-            (item.label === 'IOC INTELLIGENCE' && currentPage === 'correlation') ||
-            (item.label === 'INVESTIGATIONS' && currentPage === 'investigations') ||
-            (item.label === 'TIMELINE' && currentPage === 'investigations') ||
-            (item.label === 'REPORTS' && currentPage === 'reports') ||
-            (item.label === 'AUDIT LOG' && currentPage === 'audit') ||
-            (item.label === 'SETTINGS' && currentPage === 'security')
-          );
+        {navItems.map((item) => {
+          const isActive = currentPage === item.id;
 
           return (
             <button
-              key={`${item.id}-${idx}`}
+              key={item.id}
               onClick={() => onNavigate(item.id)}
               style={{
                 display: 'flex',
@@ -164,7 +162,7 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
                 borderRadius: '5px',
                 fontSize: '12px',
                 fontWeight: isActive ? 700 : 500,
-                letterSpacing: '0.04em',
+                letterSpacing: '0.02em',
                 color: isActive ? '#ffffff' : '#94a3b8',
                 backgroundColor: isActive ? '#1d4ed8' : 'transparent',
                 border: 'none',
