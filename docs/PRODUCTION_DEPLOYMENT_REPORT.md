@@ -142,9 +142,9 @@ Executed complete 10-step forensic incident response pipeline:
 ## 6. Live Service Endpoints
 
 - **Live Production Deployment (Cloudflare TLS Edge)**:
-  - Frontend: [https://plaintiff-robin-blanket-refer.trycloudflare.com](https://plaintiff-robin-blanket-refer.trycloudflare.com)
-  - Backend Docs: [https://plaintiff-robin-blanket-refer.trycloudflare.com/docs](https://plaintiff-robin-blanket-refer.trycloudflare.com/docs)
-  - Health: [https://plaintiff-robin-blanket-refer.trycloudflare.com/health](https://plaintiff-robin-blanket-refer.trycloudflare.com/health)
+  - Frontend: [https://potential-merchants-jelsoft-plastics.trycloudflare.com](https://potential-merchants-jelsoft-plastics.trycloudflare.com)
+  - Backend Docs: [https://potential-merchants-jelsoft-plastics.trycloudflare.com/docs](https://potential-merchants-jelsoft-plastics.trycloudflare.com/docs)
+  - Health: [https://potential-merchants-jelsoft-plastics.trycloudflare.com/health](https://potential-merchants-jelsoft-plastics.trycloudflare.com/health)
 - **Target Cloud Infrastructure**:
   - Vercel: Configured via `vercel.json` (Vite, output: `dist`, SPA rewrites enabled)
   - Render: Configured via `render.yaml` (FastAPI backend + PostgreSQL 16)

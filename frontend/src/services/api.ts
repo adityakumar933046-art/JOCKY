@@ -46,7 +46,7 @@ export const getApiBaseUrl = (): string => {
 
   // 3. Smart fallback when deployed on Vercel: use active HTTPS live cloud backend
   if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return 'https://plaintiff-robin-blanket-refer.trycloudflare.com/api/v1';
+    return 'https://potential-merchants-jelsoft-plastics.trycloudflare.com/api/v1';
   }
 
   return '/api/v1';

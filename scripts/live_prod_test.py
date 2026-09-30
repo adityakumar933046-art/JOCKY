@@ -11,7 +11,7 @@ from agent.client import AgentClient
 from agent.identity import AgentIdentity
 from agent.executor import AgentJobExecutor
 
-SERVER = "https://plaintiff-robin-blanket-refer.trycloudflare.com"
+SERVER = "https://potential-merchants-jelsoft-plastics.trycloudflare.com"
 
 def main():
     print("=" * 70)

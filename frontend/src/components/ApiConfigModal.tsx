@@ -220,7 +220,7 @@ export const ApiConfigModal: React.FC<Props> = ({ isOpen, onClose, onConnected }
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <button
                 type="button"
-                onClick={() => handlePreset('https://plaintiff-robin-blanket-refer.trycloudflare.com')}
+                onClick={() => handlePreset('https://potential-merchants-jelsoft-plastics.trycloudflare.com')}
                 style={{
                   padding: '8px 12px',
                   backgroundColor: '#f8fafc',

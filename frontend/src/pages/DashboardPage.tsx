@@ -737,7 +737,7 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input
                 type="text"
-                placeholder="https://plaintiff-robin-blanket-refer.trycloudflare.com"
+                placeholder="https://potential-merchants-jelsoft-plastics.trycloudflare.com"
                 value={quickUrl}
                 onChange={(e) => setQuickUrl(e.target.value)}
                 style={{
