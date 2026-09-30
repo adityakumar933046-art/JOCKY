@@ -15,6 +15,18 @@ import {
 } from 'lucide-react';
 
 const TEMPLATES: Record<string, string> = {
+  'Complete Threat Assessment': `# Complete forensic scan & threat assessment with extended JOCKY IR
+SYSTEM_INFO
+PROCESS_SCAN
+NETWORK_SCAN
+SERVICE_SCAN
+DRIVER_SCAN
+PERSISTENCE_SCAN
+MEMORY_SCAN
+FILE_SCAN
+DETECT
+REPORT "complete_assessment_report"`,
+
   'Full Endpoint Triage': `# Comprehensive forensic scan & threat detection
 SYSTEM INFO
 SCAN PROCESSES
