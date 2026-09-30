@@ -27,6 +27,7 @@ from server.api import (
     indicators_router,
     correlation_router,
     search_router,
+    command_center_router,
 )
 
 
@@ -93,6 +94,7 @@ app.include_router(relationships_router, prefix=config.API_V1_PREFIX)
 app.include_router(indicators_router, prefix=config.API_V1_PREFIX)
 app.include_router(correlation_router, prefix=config.API_V1_PREFIX)
 app.include_router(search_router, prefix=config.API_V1_PREFIX)
+app.include_router(command_center_router, prefix=config.API_V1_PREFIX)
 
 
 @app.get("/health")

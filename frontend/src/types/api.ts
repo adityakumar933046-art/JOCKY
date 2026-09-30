@@ -304,3 +304,125 @@ export interface SearchResponse {
   total_results: number;
   results: SearchResultItem[];
 }
+
+export interface SystemNode {
+  agent_id: string;
+  hostname: string;
+  operating_system: string;
+  os_version?: string;
+  architecture?: string;
+  status: 'ONLINE' | 'OFFLINE' | string;
+  trust_state: 'PENDING' | 'AUTHORIZED' | 'SUSPENDED' | 'REVOKED' | string;
+  last_seen?: string;
+  evidence_count: number;
+  findings_count: number;
+  max_severity: string;
+}
+
+export interface MatrixCategory {
+  low: number;
+  medium: number;
+  high: number;
+  critical: number;
+  total: number;
+}
+
+export interface CommandCenterSummary {
+  total_systems: number;
+  online_systems: number;
+  offline_systems: number;
+  trusted_systems: number;
+  total_jobs: number;
+  active_jobs: number;
+  total_evidence: number;
+  total_findings: number;
+  critical_findings: number;
+  high_findings: number;
+  medium_findings: number;
+  low_findings: number;
+  info_findings: number;
+  total_indicators: number;
+  total_correlations: number;
+  total_investigations: number;
+  last_analysis_timestamp?: string;
+}
+
+export interface TimelineEventSummary {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  hostname: string;
+  summary: string;
+  severity: string;
+  category?: string;
+  details: Record<string, any>;
+}
+
+export interface CrossSystemCorrelationSummary {
+  correlation_id: string;
+  indicator_type: string;
+  indicator_value: string;
+  agents_count: number;
+  agent_ids: string[];
+  severity: string;
+  first_seen?: string;
+  last_seen?: string;
+  occurrences: number;
+}
+
+export interface PriorityInvestigationSummary {
+  investigation_id: string;
+  title: string;
+  description?: string;
+  status: string;
+  assigned_analyst?: string;
+  created_at: string;
+  systems_count: number;
+  findings_count: number;
+  evidence_count: number;
+  max_severity: string;
+}
+
+export interface EvidenceIntegritySummary {
+  total_records: number;
+  verified_records: number;
+  tamper_detected: number;
+  custody_events: number;
+}
+
+export interface IndicatorStatsSummary {
+  ipv4_count: number;
+  ipv6_count: number;
+  domain_count: number;
+  hash_count: number;
+  file_path_count: number;
+  process_name_count: number;
+  port_count: number;
+  recent_indicators: Array<Record<string, any>>;
+}
+
+export interface RecentJobSummary {
+  job_id: string;
+  name: string;
+  agent_id: string;
+  hostname: string;
+  status: string;
+  detection_enabled: boolean;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface CommandCenterTelemetry {
+  platform_status: string;
+  version: string;
+  summary: CommandCenterSummary;
+  systems: SystemNode[];
+  adversary_matrix: Record<string, MatrixCategory>;
+  cross_system_correlations: CrossSystemCorrelationSummary[];
+  priority_investigations: PriorityInvestigationSummary[];
+  master_timeline: TimelineEventSummary[];
+  evidence_integrity: EvidenceIntegritySummary;
+  indicator_stats: IndicatorStatsSummary;
+  recent_jobs: RecentJobSummary[];
+}
+

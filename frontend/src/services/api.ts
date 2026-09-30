@@ -21,6 +21,7 @@ import {
   InvestigationNote,
   InvestigationSnapshot,
   SearchResponse,
+  CommandCenterTelemetry,
 } from '../types/api';
 
 const ANALYST_KEY = 'jocky-analyst-secret-key-2026';
@@ -470,5 +471,11 @@ export const api = {
   async search(query: string): Promise<SearchResponse> {
     const res = await fetch(resolveUrl('/search', { q: query }), { headers: getHeaders() });
     return handleResponse<SearchResponse>(res, 'Search failed');
+  },
+
+  // Forensic Command Center Telemetry
+  async getCommandCenterTelemetry(): Promise<CommandCenterTelemetry> {
+    const res = await fetch(resolveUrl('/forensics/command-center'), { headers: getHeaders() });
+    return handleResponse<CommandCenterTelemetry>(res, 'Failed to load Command Center telemetry');
   },
 };

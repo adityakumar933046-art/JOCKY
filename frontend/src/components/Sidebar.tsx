@@ -32,18 +32,43 @@ interface Props {
   onNavigate: (page: PageId) => void;
 }
 
+interface NavSection {
+  title: string;
+  items: Array<{ id: PageId; label: string; icon: React.ReactNode }>;
+}
+
 export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
-  const navItems: Array<{ id: PageId; label: string; icon: React.ReactNode }> = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { id: 'systems', label: 'Systems & Trust', icon: <Server size={18} /> },
-    { id: 'jobs', label: 'Jobs', icon: <PlaySquare size={18} /> },
-    { id: 'evidence', label: 'Evidence', icon: <FileSearch size={18} /> },
-    { id: 'findings', label: 'Findings', icon: <ShieldAlert size={18} /> },
-    { id: 'correlation', label: 'Correlation', icon: <Share2 size={18} /> },
-    { id: 'investigations', label: 'Investigations', icon: <FolderGit2 size={18} /> },
-    { id: 'reports', label: 'Reports', icon: <FileText size={18} /> },
-    { id: 'security', label: 'Security Ops', icon: <Shield size={18} /> },
-    { id: 'audit', label: 'Audit Ledger', icon: <FileSearch size={18} /> },
+  const sections: NavSection[] = [
+    {
+      title: 'COMMAND',
+      items: [
+        { id: 'dashboard', label: 'Command Center', icon: <LayoutDashboard size={17} /> },
+        { id: 'jobs', label: 'Live Analysis', icon: <PlaySquare size={17} /> },
+        { id: 'systems', label: 'Systems & Trust', icon: <Server size={17} /> },
+      ],
+    },
+    {
+      title: 'FORENSICS',
+      items: [
+        { id: 'evidence', label: 'Evidence Records', icon: <FileSearch size={17} /> },
+        { id: 'findings', label: 'Threat Findings', icon: <ShieldAlert size={17} /> },
+        { id: 'correlation', label: 'Cross-System Correlation', icon: <Share2 size={17} /> },
+      ],
+    },
+    {
+      title: 'INVESTIGATIONS',
+      items: [
+        { id: 'investigations', label: 'Active Cases', icon: <FolderGit2 size={17} /> },
+        { id: 'reports', label: 'Forensic Reports', icon: <FileText size={17} /> },
+      ],
+    },
+    {
+      title: 'SECURITY',
+      items: [
+        { id: 'security', label: 'Security Operations', icon: <Shield size={17} /> },
+        { id: 'audit', label: 'Audit Ledger', icon: <FileSearch size={17} /> },
+      ],
+    },
   ];
 
   let currentUsername = 'analyst';
@@ -81,7 +106,7 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
       {/* Brand Header */}
       <div
         style={{
-          padding: '24px 20px',
+          padding: '20px 18px',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
@@ -91,61 +116,83 @@ export const Sidebar: React.FC<Props> = ({ currentPage, onNavigate }) => {
         <div
           style={{
             backgroundColor: '#2563eb',
-            borderRadius: '6px',
-            padding: '6px',
+            borderRadius: '8px',
+            padding: '7px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.4)',
           }}
         >
-          <Shield size={22} color="#ffffff" />
+          <Shield size={20} color="#ffffff" />
         </div>
         <div>
-          <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '0.05em', color: '#ffffff' }}>
-            JOCKY
+          <div style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '0.06em', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>JOCKY</span>
+            <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontWeight: 700, letterSpacing: '0.05em' }}>
+              SIH
+            </span>
           </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Forensics Platform
+          <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+            Forensic Command Center
           </div>
         </div>
       </div>
 
-      {/* Navigation Links */}
-      <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto' }}>
-        {navItems.map((item) => {
-          const isActive = currentPage === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
+      {/* Navigation Links Grouped by Workflow */}
+      <nav style={{ padding: '12px 10px', flex: 1, display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}>
+        {sections.map((section) => (
+          <div key={section.title} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '10px 14px',
-                borderRadius: '6px',
-                fontSize: '14px',
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? '#ffffff' : '#94a3b8',
-                backgroundColor: isActive ? '#2563eb' : 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-                width: '100%',
-                transition: 'background-color 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = '#1e293b';
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+                fontSize: '10px',
+                fontWeight: 700,
+                color: '#64748b',
+                letterSpacing: '0.1em',
+                padding: '4px 10px',
+                textTransform: 'uppercase',
               }}
             >
-              {item.icon}
-              {item.label}
-            </button>
-          );
-        })}
+              {section.title}
+            </div>
+            {section.items.map((item) => {
+              const isActive = currentPage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: isActive ? 600 : 500,
+                    color: isActive ? '#ffffff' : '#94a3b8',
+                    backgroundColor: isActive ? '#2563eb' : 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.backgroundColor = '#1e293b';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  {item.icon}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Footer User Info & Logout Button */}

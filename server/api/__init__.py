@@ -16,6 +16,7 @@ from server.api.artifacts import artifacts_router, relationships_router
 from server.api.indicators import indicators_router
 from server.api.correlation import correlation_router
 from server.api.search import search_router
+from server.api.command_center import command_center_router
 
 __all__ = [
     "auth_router",
@@ -32,4 +33,5 @@ __all__ = [
     "indicators_router",
     "correlation_router",
     "search_router",
+    "command_center_router",
 ]
