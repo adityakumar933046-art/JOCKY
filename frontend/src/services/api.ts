@@ -23,7 +23,7 @@ import {
   SearchResponse,
 } from '../types/api';
 
-const API_BASE = '/api/v1';
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '/api/v1';
 const ANALYST_KEY = 'jocky-analyst-secret-key-2026';
 
 export const getAuthToken = (): string | null => {

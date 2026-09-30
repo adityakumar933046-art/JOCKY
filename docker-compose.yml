@@ -1,0 +1,72 @@
+# ==============================================================================
+# JOCKY Central Forensic Platform - Production Docker Compose Architecture
+# Services:
+#   1. db: Hardened PostgreSQL 16 on private internal network (no public port)
+#   2. jocky-server: FastAPI Backend + Built React 18 SPA (port 8000)
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. DATABASE: Hardened PostgreSQL 16 (Private Internal Network Only)
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: jocky_production_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jocky}
+      POSTGRES_USER: ${POSTGRES_USER:-jocky_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecureProductionDbPassword2026!}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - jocky-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jocky_admin} -d ${POSTGRES_DB:-jocky}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 2. APPLICATION: Central Forensic Platform (FastAPI + React 18 SPA)
+  # ----------------------------------------------------------------------------
+  jocky-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jocky_production_server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-jocky_admin}:${DB_PASSWORD:-SecureProductionDbPassword2026!}@db:5432/${POSTGRES_DB:-jocky}
+      SECRET_KEY: ${SECRET_KEY:-SecureMasterProductionSecretKey2026Minimum32Bytes!}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ACCESS_TOKEN_EXPIRE_MINUTES: "120"
+      JOCKY_PBKDF2_ITERATIONS: "310000"
+    networks:
+      - jocky-internal
+      - jocky-public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pgdata:
+    name: jocky_pgdata
+
+networks:
+  jocky-internal:
+    name: jocky-internal
+    internal: true
+  jocky-public:
+    name: jocky-public

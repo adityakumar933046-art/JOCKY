@@ -4,8 +4,10 @@ Equipped with enterprise authentication, RBAC, immutable audit logging, and secu
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.config import config
@@ -40,15 +42,24 @@ app = FastAPI(
     version=config.VERSION,
     description="Central Multi-System Digital Forensics Platform for JOCKY Agents and Investigations.",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # Ensure database tables and initial seed data exist immediately
 init_db()
 
+# Determine allowed CORS origins
+allowed_origins = list(config.CORS_ORIGINS)
+if config.FRONTEND_URL and config.FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(config.FRONTEND_URL)
+if not allowed_origins:
+    allowed_origins = ["*"]
+
 # Enable CORS for React Dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,6 +73,8 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -87,16 +100,43 @@ app.include_router(search_router, prefix=config.API_V1_PREFIX)
 def health_check():
     return {
         "status": "HEALTHY",
-        "service": config.PROJECT_NAME,
+        "service": "JOCKY",
         "version": config.VERSION,
     }
 
 
-@app.get("/")
-def root():
-    return {
-        "platform": config.PROJECT_NAME,
-        "version": config.VERSION,
-        "docs_url": "/docs",
-        "api_v1": config.API_V1_PREFIX,
-    }
+# Static Frontend & Single Page Application (SPA) Serving
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static_assets")
+
+    @app.get("/")
+    def serve_index():
+        return FileResponse(str(frontend_dist / "index.html"))
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        # Exclude API endpoints, docs, and openapi schema
+        if (
+            full_path.startswith("api/")
+            or full_path.startswith("docs")
+            or full_path.startswith("redoc")
+            or full_path.startswith("openapi.json")
+            or full_path == "health"
+        ):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        target_file = frontend_dist / full_path
+        if target_file.is_file():
+            return FileResponse(str(target_file))
+        return FileResponse(str(frontend_dist / "index.html"))
+else:
+    @app.get("/")
+    def root():
+        return {
+            "platform": config.PROJECT_NAME,
+            "version": config.VERSION,
+            "docs_url": "/docs",
+            "api_v1": config.API_V1_PREFIX,
+        }

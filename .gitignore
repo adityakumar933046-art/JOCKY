@@ -62,7 +62,10 @@ jocky_central.db
 evidence_output/
 reports_output/
 scratch/
+tools/
 *.log
+*.exe
+.jocky_agent_identity.json
 
 # Node.js & Frontend
 node_modules/

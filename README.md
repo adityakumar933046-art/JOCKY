@@ -11,6 +11,12 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)]()
 
+> ### 🌐 Live Production Deployment
+> - **Frontend Dashboard**: [https://plaintiff-robin-blanket-refer.trycloudflare.com](https://plaintiff-robin-blanket-refer.trycloudflare.com)
+> - **Backend API & Swagger Docs**: [https://plaintiff-robin-blanket-refer.trycloudflare.com/docs](https://plaintiff-robin-blanket-refer.trycloudflare.com/docs)
+> - **Health Endpoint**: [https://plaintiff-robin-blanket-refer.trycloudflare.com/health](https://plaintiff-robin-blanket-refer.trycloudflare.com/health)
+> - **Deployment Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | **Live Release Report**: [docs/PRODUCTION_DEPLOYMENT_REPORT.md](docs/PRODUCTION_DEPLOYMENT_REPORT.md)
+
 **JOCKY** is a domain-specific forensic programming language (DSL) and centralized digital forensics and incident response (DFIR) platform engineered for authorized computer and network investigation. JOCKY enables security operations teams, forensic examiners, and incident response units to write verifiable, non-destructive triage scripts that execute read-only evidence collections across Windows and Linux endpoints, automatically detect adversary techniques via a deterministic 15-rule detection engine, guarantee cryptographic evidence integrity, and perform cross-system forensic correlation through an interactive web investigation cockpit.
 
 ---
