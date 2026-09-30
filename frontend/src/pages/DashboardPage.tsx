@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../services/api';
+import { api, getApiBaseUrl, setApiBaseUrl } from '../services/api';
 import { Agent, Job, Finding, EvidenceRecord } from '../types/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { Header } from '../components/Header';
@@ -25,6 +25,14 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
   const [evidence, setEvidence] = useState<EvidenceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quickUrl, setQuickUrl] = useState('');
+
+  const handleConnectQuickUrl = () => {
+    if (quickUrl.trim()) {
+      setApiBaseUrl(quickUrl.trim());
+      window.location.reload();
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -80,19 +88,78 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         {error && (
           <div
             style={{
-              padding: '12px 16px',
-              backgroundColor: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: '6px',
-              color: '#991b1b',
+              padding: '16px 20px',
+              backgroundColor: error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON') ? '#eff6ff' : '#fef2f2',
+              border: `1px solid ${error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON') ? '#bfdbfe' : '#fecaca'}`,
+              borderRadius: '8px',
+              color: error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON') ? '#1e3a8a' : '#991b1b',
               marginBottom: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
             }}
           >
-            <AlertTriangle size={18} />
-            <span>{error}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+              <AlertTriangle size={18} color={error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON') ? '#2563eb' : '#dc2626'} />
+              <span>
+                {error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON')
+                  ? 'Render Backend API Connection Required'
+                  : 'Connection Warning'}
+              </span>
+            </div>
+            <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON') ? '#1e40af' : '#991b1b', lineHeight: 1.5 }}>
+              {error}
+            </p>
+            {(error.includes('Backend API endpoint not connected') || error.includes('HTML') || error.includes('JSON')) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="https://jocky-backend.onrender.com or Tunnel URL"
+                  value={quickUrl}
+                  onChange={(e) => setQuickUrl(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #93c5fd',
+                    fontSize: '13px',
+                    minWidth: '320px',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleConnectQuickUrl}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Connect Backend
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickUrl('https://plaintiff-robin-blanket-refer.trycloudflare.com');
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#ffffff',
+                    color: '#1d4ed8',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Use Live Tunnel
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -5,13 +5,13 @@ import {
   Finding,
   Investigation,
   TimelineResponse,
-  CompilerValidationResponse,
   AuthUser,
   LoginResponse,
-  AuditLog,
-  SecurityEvent,
   SecurityMetrics,
+  SecurityEvent,
+  AuditLog,
   CustodyEvent,
+  CompilerValidationResponse,
   NormalizedArtifact,
   ArtifactRelationship,
   Indicator,
@@ -23,8 +23,78 @@ import {
   SearchResponse,
 } from '../types/api';
 
-const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '/api/v1';
 const ANALYST_KEY = 'jocky-analyst-secret-key-2026';
+
+export const getApiBaseUrl = (): string => {
+  const custom = localStorage.getItem('jocky_api_base');
+  if (custom && custom.trim()) {
+    let url = custom.trim().replace(/\/+$/, '');
+    if (!url.endsWith('/api/v1')) {
+      url = `${url}/api/v1`;
+    }
+    return url;
+  }
+  const envUrl = ((import.meta as any).env?.VITE_API_BASE_URL as string);
+  if (envUrl && envUrl.trim()) {
+    let url = envUrl.trim().replace(/\/+$/, '');
+    if (!url.endsWith('/api/v1')) {
+      url = `${url}/api/v1`;
+    }
+    return url;
+  }
+  return '/api/v1';
+};
+
+export const setApiBaseUrl = (url: string | null): void => {
+  if (!url || !url.trim()) {
+    localStorage.removeItem('jocky_api_base');
+  } else {
+    let clean = url.trim().replace(/\/+$/, '');
+    if (!clean.endsWith('/api/v1')) {
+      clean = `${clean}/api/v1`;
+    }
+    localStorage.setItem('jocky_api_base', clean);
+  }
+};
+
+export const resolveUrl = (path: string, params?: Record<string, string | number | undefined>): string => {
+  const base = getApiBaseUrl();
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const full = `${base}${cleanPath}`;
+  const url = new URL(full, window.location.origin);
+  if (params) {
+    for (const [key, val] of Object.entries(params)) {
+      if (val !== undefined && val !== null && val !== '') {
+        url.searchParams.set(key, String(val));
+      }
+    }
+  }
+  return url.toString();
+};
+
+export const handleResponse = async <T>(res: Response, fallbackError = 'Request failed'): Promise<T> => {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html') || text.trim().startsWith('<script')) {
+      throw new Error(
+        'Backend API endpoint not connected. The application received HTML from Vercel instead of JSON. Please configure your Render Backend URL using the "Backend API" button in the header.'
+      );
+    }
+    throw new Error(`Server returned non-JSON response (${res.status}): ${text.slice(0, 100)}`);
+  }
+
+  if (!res.ok) {
+    let detail = fallbackError;
+    try {
+      const errJson = await res.json();
+      detail = errJson.detail || errJson.message || fallbackError;
+    } catch {}
+    throw new Error(detail);
+  }
+
+  return res.json() as Promise<T>;
+};
 
 export const getAuthToken = (): string | null => {
   return localStorage.getItem('jocky_access_token');
@@ -53,27 +123,44 @@ const getHeaders = (extraHeaders: Record<string, string> = {}): Record<string, s
 };
 
 export const api = {
+  // Health & Connectivity Test
+  async testConnection(targetUrl?: string): Promise<{ ok: boolean; status?: string; message?: string }> {
+    let testEndpoint = targetUrl ? targetUrl.trim().replace(/\/+$/, '') : getApiBaseUrl();
+    if (testEndpoint.endsWith('/api/v1')) {
+      testEndpoint = testEndpoint.slice(0, -7);
+    }
+    const fullHealthUrl = `${testEndpoint}/health`;
+    try {
+      const res = await fetch(fullHealthUrl, { method: 'GET', headers: { Accept: 'application/json' } });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return { ok: false, message: 'Endpoint returned HTML instead of JSON. Make sure URL points to your Render backend.' };
+      }
+      if (!res.ok) {
+        return { ok: false, message: `Server responded with HTTP ${res.status}` };
+      }
+      const data = await res.json();
+      return { ok: true, status: data.status, message: `Connected! Service: ${data.service || 'JOCKY'} v${data.version || '1.0.0'}` };
+    } catch (err: any) {
+      return { ok: false, message: err.message || 'Connection failed (CORS or network error)' };
+    }
+  },
+
   // Agents
   async getAgents(): Promise<Agent[]> {
-    const res = await fetch(`${API_BASE}/agents`);
-    if (!res.ok) throw new Error('Failed to load agents');
-    return res.json();
+    const res = await fetch(resolveUrl('/agents'));
+    return handleResponse<Agent[]>(res, 'Failed to load agents');
   },
 
   async getAgent(agentId: string): Promise<Agent> {
-    const res = await fetch(`${API_BASE}/agents/${agentId}`);
-    if (!res.ok) throw new Error('Failed to load agent details');
-    return res.json();
+    const res = await fetch(resolveUrl(`/agents/${agentId}`));
+    return handleResponse<Agent>(res, 'Failed to load agent details');
   },
 
   // Jobs
   async getJobs(params?: { agent_id?: string; status?: string }): Promise<Job[]> {
-    const url = new URL(`${API_BASE}/jobs`, window.location.origin);
-    if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id);
-    if (params?.status) url.searchParams.set('status', params.status);
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error('Failed to load jobs');
-    return res.json();
+    const res = await fetch(resolveUrl('/jobs', params));
+    return handleResponse<Job[]>(res, 'Failed to load jobs');
   },
 
   async createJob(payload: {
@@ -82,38 +169,28 @@ export const api = {
     jocky_source: string;
     detection_enabled: boolean;
   }): Promise<Job> {
-    const res = await fetch(`${API_BASE}/jobs`, {
+    const res = await fetch(resolveUrl('/jobs'), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Failed to create job' }));
-      throw new Error(err.detail || 'Failed to create job');
-    }
-    return res.json();
+    return handleResponse<Job>(res, 'Failed to create job');
   },
 
   // Compiler Validation
   async validateJocky(source: string): Promise<CompilerValidationResponse> {
-    const res = await fetch(`${API_BASE}/compiler/validate`, {
+    const res = await fetch(resolveUrl('/compiler/validate'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source }),
     });
-    if (!res.ok) throw new Error('Validation request failed');
-    return res.json();
+    return handleResponse<CompilerValidationResponse>(res, 'Validation request failed');
   },
 
   // Evidence
   async getEvidence(params?: { agent_id?: string; job_id?: string; operation?: string }): Promise<EvidenceRecord[]> {
-    const url = new URL(`${API_BASE}/evidence`, window.location.origin);
-    if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id);
-    if (params?.job_id) url.searchParams.set('job_id', params.job_id);
-    if (params?.operation) url.searchParams.set('operation', params.operation);
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error('Failed to load evidence');
-    return res.json();
+    const res = await fetch(resolveUrl('/evidence', params));
+    return handleResponse<EvidenceRecord[]>(res, 'Failed to load evidence');
   },
 
   // Findings
@@ -124,28 +201,19 @@ export const api = {
     category?: string;
     rule_id?: string;
   }): Promise<Finding[]> {
-    const url = new URL(`${API_BASE}/findings`, window.location.origin);
-    if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id);
-    if (params?.job_id) url.searchParams.set('job_id', params.job_id);
-    if (params?.severity) url.searchParams.set('severity', params.severity);
-    if (params?.category) url.searchParams.set('category', params.category);
-    if (params?.rule_id) url.searchParams.set('rule_id', params.rule_id);
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error('Failed to load findings');
-    return res.json();
+    const res = await fetch(resolveUrl('/findings', params));
+    return handleResponse<Finding[]>(res, 'Failed to load findings');
   },
 
   // Investigations
   async getInvestigations(): Promise<Investigation[]> {
-    const res = await fetch(`${API_BASE}/investigations`);
-    if (!res.ok) throw new Error('Failed to load investigations');
-    return res.json();
+    const res = await fetch(resolveUrl('/investigations'));
+    return handleResponse<Investigation[]>(res, 'Failed to load investigations');
   },
 
   async getInvestigation(id: string): Promise<Investigation> {
-    const res = await fetch(`${API_BASE}/investigations/${id}`);
-    if (!res.ok) throw new Error('Failed to load investigation');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${id}`));
+    return handleResponse<Investigation>(res, 'Failed to load investigation');
   },
 
   async createInvestigation(payload: {
@@ -157,13 +225,12 @@ export const api = {
     evidence_ids?: string[];
     finding_ids?: string[];
   }): Promise<Investigation> {
-    const res = await fetch(`${API_BASE}/investigations`, {
+    const res = await fetch(resolveUrl('/investigations'), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Failed to create investigation');
-    return res.json();
+    return handleResponse<Investigation>(res, 'Failed to create investigation');
   },
 
   async updateInvestigation(
@@ -177,73 +244,55 @@ export const api = {
       finding_ids?: string[];
     }
   ): Promise<Investigation> {
-    const res = await fetch(`${API_BASE}/investigations/${id}`, {
+    const res = await fetch(resolveUrl(`/investigations/${id}`), {
       method: 'PATCH',
       headers: getHeaders(),
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Failed to update investigation');
-    return res.json();
+    return handleResponse<Investigation>(res, 'Failed to update investigation');
   },
 
   async getTimeline(id: string): Promise<TimelineResponse> {
-    const res = await fetch(`${API_BASE}/investigations/${id}/timeline`);
-    if (!res.ok) throw new Error('Failed to load timeline');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${id}/timeline`));
+    return handleResponse<TimelineResponse>(res, 'Failed to load timeline');
   },
 
   // Agent Trust Lifecycle
   async approveAgent(agentId: string, reason?: string): Promise<Agent> {
-    const res = await fetch(`${API_BASE}/agents/${agentId}/approve`, {
+    const res = await fetch(resolveUrl(`/agents/${agentId}/approve`), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ reason }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Failed to approve agent' }));
-      throw new Error(err.detail || 'Failed to approve agent');
-    }
-    return res.json();
+    return handleResponse<Agent>(res, 'Failed to approve agent');
   },
 
   async suspendAgent(agentId: string, reason?: string): Promise<Agent> {
-    const res = await fetch(`${API_BASE}/agents/${agentId}/suspend`, {
+    const res = await fetch(resolveUrl(`/agents/${agentId}/suspend`), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ reason }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Failed to suspend agent' }));
-      throw new Error(err.detail || 'Failed to suspend agent');
-    }
-    return res.json();
+    return handleResponse<Agent>(res, 'Failed to suspend agent');
   },
 
   async revokeAgent(agentId: string, reason?: string): Promise<Agent> {
-    const res = await fetch(`${API_BASE}/agents/${agentId}/revoke`, {
+    const res = await fetch(resolveUrl(`/agents/${agentId}/revoke`), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ reason }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Failed to revoke agent' }));
-      throw new Error(err.detail || 'Failed to revoke agent');
-    }
-    return res.json();
+    return handleResponse<Agent>(res, 'Failed to revoke agent');
   },
 
   // Authentication
   async login(username: string, password: string): Promise<LoginResponse> {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await fetch(resolveUrl('/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Login failed' }));
-      throw new Error(err.detail || 'Login failed');
-    }
-    const data: LoginResponse = await res.json();
+    const data = await handleResponse<LoginResponse>(res, 'Login failed');
     setAuthToken(data.access_token);
     localStorage.setItem('jocky_user', JSON.stringify({
       user_id: data.user_id,
@@ -256,7 +305,7 @@ export const api = {
 
   async logout(): Promise<void> {
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
+      await fetch(resolveUrl('/auth/logout'), {
         method: 'POST',
         headers: getHeaders(),
       });
@@ -266,172 +315,123 @@ export const api = {
   },
 
   async getMe(): Promise<AuthUser> {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await fetch(resolveUrl('/auth/me'), {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to load user profile');
-    return res.json();
+    return handleResponse<AuthUser>(res, 'Failed to load user profile');
   },
 
   // Security & Audit
   async getSecurityMetrics(): Promise<SecurityMetrics> {
-    const res = await fetch(`${API_BASE}/security/metrics`, {
+    const res = await fetch(resolveUrl('/security/metrics'), {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to load security metrics');
-    return res.json();
+    return handleResponse<SecurityMetrics>(res, 'Failed to load security metrics');
   },
 
   async getSecurityEvents(params?: { event_type?: string; severity?: string; limit?: number }): Promise<SecurityEvent[]> {
-    const url = new URL(`${API_BASE}/security/events`, window.location.origin);
-    if (params?.event_type) url.searchParams.set('event_type', params.event_type);
-    if (params?.severity) url.searchParams.set('severity', params.severity);
-    if (params?.limit) url.searchParams.set('limit', params.limit.toString());
-    const res = await fetch(url.toString(), {
+    const res = await fetch(resolveUrl('/security/events', params), {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to load security events');
-    return res.json();
+    return handleResponse<SecurityEvent[]>(res, 'Failed to load security events');
   },
 
   async getAuditLogs(params?: { actor_id?: string; action?: string; limit?: number }): Promise<AuditLog[]> {
-    const url = new URL(`${API_BASE}/audit`, window.location.origin);
-    if (params?.actor_id) url.searchParams.set('actor_id', params.actor_id);
-    if (params?.action) url.searchParams.set('action', params.action);
-    if (params?.limit) url.searchParams.set('limit', params.limit.toString());
-    const res = await fetch(url.toString(), {
+    const res = await fetch(resolveUrl('/audit', params), {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to load audit logs');
-    return res.json();
+    return handleResponse<AuditLog[]>(res, 'Failed to load audit logs');
   },
 
   async getEvidenceCustody(evidenceId: string): Promise<CustodyEvent[]> {
-    const res = await fetch(`${API_BASE}/evidence/${evidenceId}/custody`, {
+    const res = await fetch(resolveUrl(`/evidence/${evidenceId}/custody`), {
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to load chain of custody');
-    return res.json();
+    return handleResponse<CustodyEvent[]>(res, 'Failed to load chain of custody');
   },
 
   getReportUrl(id: string, format: 'html' | 'json' = 'html'): string {
-    return `${API_BASE}/investigations/${id}/report?format=${format}`;
+    return resolveUrl(`/investigations/${id}/report`, { format });
   },
 
   // Forensics Normalization & Artifacts
   async getArtifacts(params?: { artifact_type?: string; agent_id?: string; evidence_id?: string; search?: string; limit?: number }): Promise<NormalizedArtifact[]> {
-    const url = new URL(`${API_BASE}/artifacts`, window.location.origin);
-    if (params?.artifact_type) url.searchParams.set('artifact_type', params.artifact_type);
-    if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id);
-    if (params?.evidence_id) url.searchParams.set('evidence_id', params.evidence_id);
-    if (params?.search) url.searchParams.set('search', params.search);
-    if (params?.limit) url.searchParams.set('limit', params.limit.toString());
-    const res = await fetch(url.toString(), { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load normalized artifacts');
-    return res.json();
+    const res = await fetch(resolveUrl('/artifacts', params), { headers: getHeaders() });
+    return handleResponse<NormalizedArtifact[]>(res, 'Failed to load normalized artifacts');
   },
 
   async getArtifact(artifactId: string): Promise<NormalizedArtifact> {
-    const res = await fetch(`${API_BASE}/artifacts/${artifactId}`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load artifact');
-    return res.json();
+    const res = await fetch(resolveUrl(`/artifacts/${artifactId}`), { headers: getHeaders() });
+    return handleResponse<NormalizedArtifact>(res, 'Failed to load artifact');
   },
 
   async getRelationships(params?: { source_id?: string; target_id?: string; relationship_type?: string }): Promise<ArtifactRelationship[]> {
-    const url = new URL(`${API_BASE}/relationships`, window.location.origin);
-    if (params?.source_id) url.searchParams.set('source_artifact_id', params.source_id);
-    if (params?.target_id) url.searchParams.set('target_artifact_id', params.target_id);
-    if (params?.relationship_type) url.searchParams.set('relationship_type', params.relationship_type);
-    const res = await fetch(url.toString(), { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load artifact relationships');
-    return res.json();
+    const res = await fetch(resolveUrl('/relationships', params), { headers: getHeaders() });
+    return handleResponse<ArtifactRelationship[]>(res, 'Failed to load artifact relationships');
   },
 
   // Indicators (IOCs)
   async getIndicators(params?: { indicator_type?: string; severity?: string; min_occurrences?: number; search?: string; limit?: number }): Promise<Indicator[]> {
-    const url = new URL(`${API_BASE}/indicators`, window.location.origin);
-    if (params?.indicator_type) url.searchParams.set('indicator_type', params.indicator_type);
-    if (params?.severity) url.searchParams.set('severity', params.severity);
-    if (params?.min_occurrences) url.searchParams.set('min_occurrences', params.min_occurrences.toString());
-    if (params?.search) url.searchParams.set('search', params.search);
-    if (params?.limit) url.searchParams.set('limit', params.limit.toString());
-    const res = await fetch(url.toString(), { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load forensic indicators');
-    return res.json();
+    const res = await fetch(resolveUrl('/indicators', params), { headers: getHeaders() });
+    return handleResponse<Indicator[]>(res, 'Failed to load forensic indicators');
   },
 
   async getIndicator(indicatorId: string): Promise<Indicator> {
-    const res = await fetch(`${API_BASE}/indicators/${indicatorId}`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load indicator details');
-    return res.json();
+    const res = await fetch(resolveUrl(`/indicators/${indicatorId}`), { headers: getHeaders() });
+    return handleResponse<Indicator>(res, 'Failed to load indicator details');
   },
 
   // Correlation & Cross-System Findings
   async getCrossSystemCorrelations(params?: { indicator_type?: string; severity?: string; search?: string }): Promise<CrossSystemCorrelation[]> {
-    const url = new URL(`${API_BASE}/correlation/cross-system`, window.location.origin);
-    if (params?.indicator_type) url.searchParams.set('indicator_type', params.indicator_type);
-    if (params?.severity) url.searchParams.set('severity', params.severity);
-    if (params?.search) url.searchParams.set('search', params.search);
-    const res = await fetch(url.toString(), { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load cross-system correlations');
-    return res.json();
+    const res = await fetch(resolveUrl('/correlation/cross-system', params), { headers: getHeaders() });
+    return handleResponse<CrossSystemCorrelation[]>(res, 'Failed to load cross-system correlations');
   },
 
   async getCorrelatedFindings(params?: { category?: string; severity?: string }): Promise<CorrelatedFinding[]> {
-    const url = new URL(`${API_BASE}/correlation/findings`, window.location.origin);
-    if (params?.category) url.searchParams.set('category', params.category);
-    if (params?.severity) url.searchParams.set('severity', params.severity);
-    const res = await fetch(url.toString(), { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load correlated findings');
-    return res.json();
+    const res = await fetch(resolveUrl('/correlation/findings', params), { headers: getHeaders() });
+    return handleResponse<CorrelatedFinding[]>(res, 'Failed to load correlated findings');
   },
 
   async runCorrelation(): Promise<Record<string, any>> {
-    const res = await fetch(`${API_BASE}/correlation/run`, {
+    const res = await fetch(resolveUrl('/correlation/run'), {
       method: 'POST',
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to execute correlation analysis');
-    return res.json();
+    return handleResponse<Record<string, any>>(res, 'Failed to execute correlation analysis');
   },
 
   // Investigation Workspace Extensions
   async getInvestigationGraph(investigationId: string): Promise<InvestigationGraph> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/graph`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load investigation graph');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/graph`), { headers: getHeaders() });
+    return handleResponse<InvestigationGraph>(res, 'Failed to load investigation graph');
   },
 
   async getInvestigationArtifacts(investigationId: string): Promise<NormalizedArtifact[]> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/artifacts`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load investigation artifacts');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/artifacts`), { headers: getHeaders() });
+    return handleResponse<NormalizedArtifact[]>(res, 'Failed to load investigation artifacts');
   },
 
   async getInvestigationIndicators(investigationId: string): Promise<Indicator[]> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/indicators`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load investigation indicators');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/indicators`), { headers: getHeaders() });
+    return handleResponse<Indicator[]>(res, 'Failed to load investigation indicators');
   },
 
   async getInvestigationNotes(investigationId: string): Promise<InvestigationNote[]> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/notes`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load investigation notes');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/notes`), { headers: getHeaders() });
+    return handleResponse<InvestigationNote[]>(res, 'Failed to load investigation notes');
   },
 
   async addInvestigationNote(investigationId: string, content: string): Promise<InvestigationNote> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/notes`, {
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/notes`), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ content }),
     });
-    if (!res.ok) throw new Error('Failed to add note');
-    return res.json();
+    return handleResponse<InvestigationNote>(res, 'Failed to add note');
   },
 
   async deleteInvestigationNote(investigationId: string, noteId: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/notes/${noteId}`, {
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/notes/${noteId}`), {
       method: 'DELETE',
       headers: getHeaders(),
     });
@@ -439,27 +439,22 @@ export const api = {
   },
 
   async createInvestigationSnapshot(investigationId: string, title: string): Promise<InvestigationSnapshot> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/snapshots`, {
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/snapshots`), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ title }),
     });
-    if (!res.ok) throw new Error('Failed to capture snapshot');
-    return res.json();
+    return handleResponse<InvestigationSnapshot>(res, 'Failed to capture snapshot');
   },
 
   async getInvestigationSnapshots(investigationId: string): Promise<InvestigationSnapshot[]> {
-    const res = await fetch(`${API_BASE}/investigations/${investigationId}/snapshots`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to load snapshots');
-    return res.json();
+    const res = await fetch(resolveUrl(`/investigations/${investigationId}/snapshots`), { headers: getHeaders() });
+    return handleResponse<InvestigationSnapshot[]>(res, 'Failed to load snapshots');
   },
 
   // Forensic Search
   async search(query: string): Promise<SearchResponse> {
-    const url = new URL(`${API_BASE}/search`, window.location.origin);
-    url.searchParams.set('q', query);
-    const res = await fetch(url.toString(), { headers: getHeaders() });
-    if (!res.ok) throw new Error('Search failed');
-    return res.json();
+    const res = await fetch(resolveUrl('/search', { q: query }), { headers: getHeaders() });
+    return handleResponse<SearchResponse>(res, 'Search failed');
   },
 };

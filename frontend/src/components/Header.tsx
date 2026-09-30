@@ -1,5 +1,7 @@
-import React from 'react';
-import { RefreshCw, ShieldCheck, Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { RefreshCw, ShieldCheck, Search, Globe } from 'lucide-react';
+import { getApiBaseUrl } from '../services/api';
+import { ApiConfigModal } from './ApiConfigModal';
 
 interface Props {
   title: string;
@@ -18,6 +20,13 @@ export const Header: React.FC<Props> = ({
   action,
   onSearchClick,
 }) => {
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const currentBase = getApiBaseUrl();
+  const isCustomUrl = currentBase !== '/api/v1';
+  const displayLabel = isCustomUrl
+    ? currentBase.replace(/^https?:\/\//, '').replace(/\/api\/v1$/, '')
+    : 'Local / Same-Origin';
+
   return (
     <header
       style={{
@@ -62,6 +71,31 @@ export const Header: React.FC<Props> = ({
 
         {action}
 
+        {/* Backend API Configuration Button */}
+        <button
+          type="button"
+          onClick={() => setIsConfigOpen(true)}
+          title={`Backend API Endpoint: ${currentBase}\nClick to configure or test connection`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            backgroundColor: isCustomUrl ? '#eff6ff' : '#f8fafc',
+            border: `1px solid ${isCustomUrl ? '#bfdbfe' : '#cbd5e1'}`,
+            padding: '6px 12px',
+            borderRadius: '20px',
+            fontSize: '12px',
+            color: isCustomUrl ? '#1d4ed8' : '#475569',
+            fontWeight: 500,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Globe size={14} color={isCustomUrl ? '#2563eb' : '#64748b'} />
+          <span>API: {displayLabel.length > 25 ? `${displayLabel.slice(0, 23)}...` : displayLabel}</span>
+        </button>
+
+        {/* Analyst Mode Badge */}
         <div
           style={{
             display: 'flex',
@@ -117,6 +151,12 @@ export const Header: React.FC<Props> = ({
           </button>
         )}
       </div>
+
+      <ApiConfigModal
+        isOpen={isConfigOpen}
+        onClose={() => setIsConfigOpen(false)}
+        onConnected={onRefresh}
+      />
     </header>
   );
 };
