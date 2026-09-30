@@ -388,9 +388,15 @@ export interface EvidenceIntegritySummary {
   verified_records: number;
   tamper_detected: number;
   custody_events: number;
+  verified_percentage: number;
+  last_verification_timestamp?: string;
 }
 
 export interface IndicatorStatsSummary {
+  total_indicators: number;
+  new_indicators: number;
+  correlated_indicators: number;
+  systems_affected: number;
   ipv4_count: number;
   ipv6_count: number;
   domain_count: number;
@@ -408,8 +414,20 @@ export interface RecentJobSummary {
   hostname: string;
   status: string;
   detection_enabled: boolean;
+  findings_generated: number;
   created_at: string;
   completed_at?: string;
+}
+
+export interface ReportSummary {
+  report_id: string;
+  investigation_id: string;
+  investigation_title: string;
+  generated_by: string;
+  generated_at: string;
+  evidence_count: number;
+  finding_count: number;
+  integrity_status: string;
 }
 
 export interface CommandCenterTelemetry {
@@ -424,5 +442,6 @@ export interface CommandCenterTelemetry {
   evidence_integrity: EvidenceIntegritySummary;
   indicator_stats: IndicatorStatsSummary;
   recent_jobs: RecentJobSummary[];
+  reports: ReportSummary[];
 }
 

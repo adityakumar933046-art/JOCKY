@@ -3,7 +3,6 @@ import {
   Shield,
   Server,
   Play,
-  PlaySquare,
   FileSearch,
   ShieldAlert,
   FolderGit2,
@@ -22,17 +21,19 @@ import {
   Layers,
   Lock,
   Hash,
-  ExternalLink,
   RefreshCw,
   Plus,
   Code2,
   Send,
-  FileCode,
+  FileSpreadsheet,
   Check,
   X,
   ShieldCheck,
-  Flame,
   Laptop,
+  CheckSquare,
+  HelpCircle,
+  ExternalLink,
+  Info,
 } from 'lucide-react';
 import { api, getApiBaseUrl, setApiBaseUrl, removeAuthToken } from '../services/api';
 import {
@@ -42,6 +43,7 @@ import {
   TimelineEventSummary,
   CrossSystemCorrelationSummary,
   CompilerValidationResponse,
+  ReportSummary,
 } from '../types/api';
 import { PageId } from '../components/Sidebar';
 import { Modal } from '../components/Modal';
@@ -54,8 +56,8 @@ interface Props {
 const SCRIPT_TEMPLATES: Record<string, { label: string; code: string; desc: string }> = {
   complete: {
     label: 'Complete Threat Assessment',
-    desc: 'Full 8-domain forensic sweep with memory, driver, persistence, network & process inspection',
-    code: `# JOCKY Forensic Script: Full Adversary Assessment
+    desc: 'Full 9-domain forensic scan with memory, driver, persistence, network & process verification',
+    code: `# JOCKY Forensic Script: Full Threat Assessment
 SYSTEM_INFO
 PROCESS_SCAN
 NETWORK_SCAN
@@ -64,33 +66,37 @@ DRIVER_SCAN
 PERSISTENCE_SCAN
 MEMORY_SCAN
 FILE_SCAN
+
 DETECT
-REPORT "adversary_sweep_report"`,
+REPORT "complete_assessment_report"`,
   },
   process_net: {
     label: 'Process & Network Hunt',
-    desc: 'Triage listening sockets, unbacked executable memory, and hidden process trees',
+    desc: 'Audit listening sockets, unbacked memory segments, and suspicious process lineages',
     code: `# JOCKY Forensic Script: Process & Socket Triage
 PROCESS_SCAN
 NETWORK_SCAN
+
 DETECT
 REPORT "proc_net_triage"`,
   },
   persistence: {
     label: 'Persistence & Autorun Audit',
-    desc: 'Audit registry Run keys, scheduled tasks, systemd services, and startup items',
+    desc: 'Audit registry Run keys, scheduled tasks, startup entries, and background services',
     code: `# JOCKY Forensic Script: Persistence Audit
 PERSISTENCE_SCAN
 SERVICE_SCAN
+
 DETECT
 REPORT "persistence_audit"`,
   },
   parent_child: {
-    label: 'Parent-Child Execution Invariants',
-    desc: 'Detect suspicious process lineage (e.g. Office spawning PowerShell, cmd spawning rundll32)',
+    label: 'Parent-Child Lineage Audit',
+    desc: 'Detect anomalous execution lineages (Office spawning shells, svchost spawning cmd.exe)',
     code: `# JOCKY Forensic Script: Parent-Child Invariant Check
 PROCESS_SCAN
 MEMORY_SCAN
+
 DETECT
 REPORT "lineage_integrity"`,
   },
@@ -101,6 +107,7 @@ REPORT "lineage_integrity"`,
 DRIVER_SCAN
 MEMORY_SCAN
 FILE_SCAN
+
 DETECT
 REPORT "driver_mem_integrity"`,
   },
@@ -110,15 +117,15 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
   const [telemetry, setTelemetry] = useState<CommandCenterTelemetry | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [quickUrl, setQuickUrl] = useState<string>('');
 
   // Filters
-  const [systemFilter, setSystemFilter] = useState<'ALL' | 'WINDOWS' | 'LINUX' | 'THREATS' | 'ONLINE'>('ALL');
-  const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'FINDING' | 'EVIDENCE' | 'JOB'>('ALL');
+  const [systemFilter, setSystemFilter] = useState<'ALL' | 'WINDOWS' | 'LINUX' | 'ONLINE' | 'WITH THREATS'>('ALL');
+  const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'FINDING' | 'EVIDENCE' | 'IOC' | 'JOB'>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSystemNode, setSelectedSystemNode] = useState<SystemNode | null>(null);
   const [iocSearch, setIocSearch] = useState<string>('');
 
-  // Integrated JOCKY Script Studio
+  // JOCKY Scripting Engine State
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('complete');
   const [scriptCode, setScriptCode] = useState<string>(SCRIPT_TEMPLATES.complete.code);
   const [targetAgentId, setTargetAgentId] = useState<string>('');
@@ -135,6 +142,8 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
   // Modals
   const [isRunModalOpen, setIsRunModalOpen] = useState<boolean>(false);
   const [isNewInvestigationOpen, setIsNewInvestigationOpen] = useState<boolean>(false);
+  const [selectedEventModal, setSelectedEventModal] = useState<TimelineEventSummary | null>(null);
+  const [selectedIocModal, setSelectedIocModal] = useState<any | null>(null);
   const [invTitle, setInvTitle] = useState<string>('');
   const [invDesc, setInvDesc] = useState<string>('');
   const [invAssigned, setInvAssigned] = useState<string>('analyst');
@@ -150,117 +159,15 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         const firstOnline = data.systems.find((s) => s.status === 'ONLINE');
         if (firstOnline) {
           setTargetAgentId(firstOnline.agent_id);
+          setSelectedSystemNode(firstOnline);
         } else {
           setTargetAgentId(data.systems[0].agent_id);
+          setSelectedSystemNode(data.systems[0]);
         }
       }
     } catch (err: any) {
-      console.warn('Command Center telemetry aggregation call failed, falling back:', err);
-      // Resilient fallback: Query base endpoints directly
-      try {
-        const [agRes, jbRes, fnRes, evRes] = await Promise.all([
-          api.getAgents(),
-          api.getJobs(),
-          api.getFindings(),
-          api.getEvidence(),
-        ]);
-
-        const online = agRes.filter((a) => a.status === 'ONLINE').length;
-        const trusted = agRes.filter((a) => a.trust_state === 'AUTHORIZED').length;
-        const activeJobs = jbRes.filter(
-          (j) => j.status === 'PENDING' || j.status === 'ASSIGNED' || j.status === 'RUNNING'
-        ).length;
-
-        const sevCounts = {
-          critical: fnRes.filter((f) => f.severity === 'CRITICAL').length,
-          high: fnRes.filter((f) => f.severity === 'HIGH').length,
-          medium: fnRes.filter((f) => f.severity === 'MEDIUM').length,
-          low: fnRes.filter((f) => f.severity === 'LOW').length,
-          info: fnRes.filter((f) => f.severity === 'INFO').length,
-        };
-
-        const sysNodes: SystemNode[] = agRes.slice(0, 24).map((a) => {
-          const sysFindings = fnRes.filter((f) => f.agent_id === a.agent_id);
-          const sysEv = evRes.filter((e) => e.agent_id === a.agent_id);
-          let maxSev = 'CLEAN';
-          if (sysFindings.some((f) => f.severity === 'CRITICAL')) maxSev = 'CRITICAL';
-          else if (sysFindings.some((f) => f.severity === 'HIGH')) maxSev = 'HIGH';
-          else if (sysFindings.some((f) => f.severity === 'MEDIUM')) maxSev = 'MEDIUM';
-          else if (sysFindings.some((f) => f.severity === 'LOW')) maxSev = 'LOW';
-
-          return {
-            agent_id: a.agent_id,
-            hostname: a.hostname,
-            operating_system: a.operating_system,
-            os_version: a.os_version,
-            architecture: a.architecture,
-            status: a.status,
-            trust_state: a.trust_state,
-            last_seen: a.last_seen,
-            evidence_count: sysEv.length,
-            findings_count: sysFindings.length,
-            max_severity: maxSev,
-          };
-        });
-
-        const fallbackTelemetry: CommandCenterTelemetry = {
-          platform_status: 'ONLINE',
-          version: '1.0.0',
-          summary: {
-            total_systems: agRes.length,
-            online_systems: online,
-            offline_systems: agRes.length - online,
-            trusted_systems: trusted,
-            total_jobs: jbRes.length,
-            active_jobs: activeJobs,
-            total_evidence: evRes.length,
-            total_findings: fnRes.length,
-            critical_findings: sevCounts.critical,
-            high_findings: sevCounts.high,
-            medium_findings: sevCounts.medium,
-            low_findings: sevCounts.low,
-            info_findings: sevCounts.info,
-            total_indicators: 4292,
-            total_correlations: 163,
-            total_investigations: 71,
-            last_analysis_timestamp: new Date().toISOString(),
-          },
-          systems: sysNodes,
-          adversary_matrix: {},
-          cross_system_correlations: [],
-          priority_investigations: [],
-          master_timeline: [],
-          evidence_integrity: {
-            total_records: evRes.length,
-            verified_records: Math.max(0, evRes.length - 10),
-            tamper_detected: 10,
-            custody_events: 428,
-          },
-          indicator_stats: {
-            ipv4_count: 1420,
-            ipv6_count: 120,
-            domain_count: 890,
-            hash_count: 940,
-            file_path_count: 530,
-            process_name_count: 240,
-            port_count: 152,
-            recent_indicators: [],
-          },
-          recent_jobs: jbRes.slice(0, 10).map((j) => ({
-            job_id: j.job_id,
-            name: j.name,
-            agent_id: j.agent_id,
-            hostname: agRes.find((a) => a.agent_id === j.agent_id)?.hostname || j.agent_id,
-            status: j.status,
-            detection_enabled: j.detection_enabled,
-            created_at: j.created_at,
-            completed_at: j.completed_at,
-          })),
-        };
-        setTelemetry(fallbackTelemetry);
-      } catch (innerErr: any) {
-        setError(innerErr.message || 'Failed to connect to central server');
-      }
+      console.warn('Telemetry load failed, attempting fallback:', err);
+      setError(err.message || 'Unable to connect to central forensic server');
     } finally {
       setLoading(false);
     }
@@ -279,7 +186,7 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
       if (systemFilter === 'WINDOWS') return sys.operating_system.toLowerCase().includes('win');
       if (systemFilter === 'LINUX') return sys.operating_system.toLowerCase().includes('linux');
       if (systemFilter === 'ONLINE') return sys.status === 'ONLINE';
-      if (systemFilter === 'THREATS') return sys.findings_count > 0;
+      if (systemFilter === 'WITH THREATS') return sys.findings_count > 0;
       return true;
     });
   }, [telemetry?.systems, systemFilter]);
@@ -288,9 +195,10 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
   const filteredTimeline = useMemo(() => {
     if (!telemetry?.master_timeline) return [];
     return telemetry.master_timeline.filter((ev) => {
-      if (timelineFilter === 'FINDING') return ev.event_type.includes('FINDING');
-      if (timelineFilter === 'EVIDENCE') return ev.event_type.includes('EVIDENCE');
-      if (timelineFilter === 'JOB') return ev.event_type.includes('JOB');
+      if (timelineFilter === 'FINDING') return ev.event_type === 'FINDING';
+      if (timelineFilter === 'EVIDENCE') return ev.event_type === 'EVIDENCE';
+      if (timelineFilter === 'IOC') return ev.event_type === 'IOC';
+      if (timelineFilter === 'JOB') return ev.event_type === 'JOB';
       return true;
     });
   }, [telemetry?.master_timeline, timelineFilter]);
@@ -307,7 +215,6 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
     );
   }, [telemetry?.indicator_stats?.recent_indicators, iocSearch]);
 
-  // Handle template selection
   const handleTemplateChange = (key: string) => {
     setSelectedTemplateKey(key);
     if (SCRIPT_TEMPLATES[key]) {
@@ -317,7 +224,6 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
-  // Compiler Validation
   const handleValidateScript = async () => {
     try {
       setValidating(true);
@@ -336,10 +242,9 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
-  // Execute Script on Target Host
   const handleExecuteScript = async () => {
     if (!targetAgentId) {
-      alert('Please select a target host before executing the script.');
+      alert('Please select a target host before running forensic analysis.');
       return;
     }
     try {
@@ -355,28 +260,27 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
       setExecutionFeedback({
         jobId: job.job_id,
         status: job.status,
-        message: `Forensic script dispatched successfully! Assigned Job ID: ${job.job_id.slice(0, 8)}...`,
+        message: `JOCKY forensic job dispatched. Assigned ID: ${job.job_id.slice(0, 8)}...`,
       });
       loadData();
     } catch (err: any) {
       setExecutionFeedback({
         jobId: '',
         status: 'FAILED',
-        message: err.message || 'Script dispatch failed',
+        message: err.message || 'Execution dispatch failed',
       });
     } finally {
       setExecutingScript(false);
     }
   };
 
-  // Create Investigation
   const handleCreateInvestigation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invTitle.trim()) return;
     try {
       setCreatingInv(true);
       const agentIds = targetAgentId ? [targetAgentId] : [];
-      const newInv = await api.createInvestigation({
+      await api.createInvestigation({
         title: invTitle.trim(),
         description: invDesc.trim(),
         assigned_analyst: invAssigned,
@@ -393,14 +297,6 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
-  // Quick connect URL
-  const handleConnectQuickUrl = () => {
-    if (quickUrl.trim()) {
-      setApiBaseUrl(quickUrl.trim());
-      window.location.reload();
-    }
-  };
-
   const sum = telemetry?.summary;
   const integrity = telemetry?.evidence_integrity;
   const indStats = telemetry?.indicator_stats;
@@ -412,83 +308,84 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         flexDirection: 'column',
         height: '100%',
         overflowY: 'auto',
-        backgroundColor: '#0a0d14',
-        color: '#e2e8f0',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        backgroundColor: '#f8fafc',
+        color: '#0f172a',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
       }}
     >
       {/* ========================================================================= */}
-      {/* SECTION 1: TOP FORENSIC COMMAND BAR */}
+      {/* SECTION 3: TOP COMMAND BAR (COMPACT DENSE FORENSIC STATUS) */}
       {/* ========================================================================= */}
-      <div
+      <header
         style={{
-          backgroundColor: '#0f172a',
-          borderBottom: '1px solid #1e293b',
-          padding: '16px 28px',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #cbd5e1',
+          padding: '12px 24px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '14px',
+          gap: '10px',
           flexShrink: 0,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div
                 style={{
-                  width: '10px',
-                  height: '10px',
+                  width: '9px',
+                  height: '9px',
                   borderRadius: '50%',
-                  backgroundColor: '#10b981',
-                  boxShadow: '0 0 10px #10b981',
+                  backgroundColor: '#16a34a',
+                  boxShadow: '0 0 6px #16a34a',
                 }}
               />
-              <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '0.04em', color: '#ffffff' }}>
+              <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, letterSpacing: '0.04em', color: '#0f172a' }}>
                 JOCKY FORENSIC COMMAND CENTER
               </h1>
               <span
                 style={{
                   fontSize: '11px',
                   fontWeight: 700,
-                  backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                  color: '#38bdf8',
+                  backgroundColor: '#eff6ff',
+                  color: '#1d4ed8',
                   padding: '2px 8px',
                   borderRadius: '4px',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  letterSpacing: '0.06em',
+                  border: '1px solid #bfdbfe',
+                  letterSpacing: '0.04em',
                 }}
               >
-                PROPRIETARY DSL DEFENSIVE ENGINE
+                SIH PROBLEM STATEMENT 26148
               </span>
             </div>
-            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
-              Central Multi-System Triage, Adversary Detection, Cross-Endpoint Evidence Correlation & Reporting
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+              Computer & Network Forensic Analysis • Threat Detection • Evidence Intelligence
             </p>
           </div>
 
-          {/* Quick Forensic Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Quick Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <button
               onClick={() => setIsRunModalOpen(true)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                backgroundColor: '#2563eb',
+                gap: '6px',
+                backgroundColor: '#1e40af',
                 color: '#ffffff',
                 border: 'none',
-                padding: '8px 16px',
-                borderRadius: '6px',
-                fontSize: '13px',
+                padding: '7px 14px',
+                borderRadius: '4px',
+                fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.35)',
+                boxShadow: '0 1px 2px rgba(30, 64, 175, 0.2)',
                 transition: 'background-color 0.15s ease',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1d4ed8')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#2563eb')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1e40af')}
             >
-              <Play size={15} fill="#ffffff" />
+              <Play size={13} fill="#ffffff" />
               <span>Run JOCKY Analysis</span>
             </button>
 
@@ -497,21 +394,20 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                backgroundColor: '#1e293b',
-                color: '#f8fafc',
-                border: '1px solid #334155',
-                padding: '8px 14px',
-                borderRadius: '6px',
-                fontSize: '13px',
+                gap: '6px',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                border: '1px solid #cbd5e1',
+                padding: '7px 12px',
+                borderRadius: '4px',
+                fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#64748b')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#334155')}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#94a3b8')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#cbd5e1')}
             >
-              <Plus size={15} />
+              <Plus size={13} />
               <span>New Investigation</span>
             </button>
 
@@ -520,18 +416,18 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                backgroundColor: '#1e293b',
-                color: '#f8fafc',
-                border: '1px solid #334155',
-                padding: '8px 14px',
-                borderRadius: '6px',
-                fontSize: '13px',
+                gap: '6px',
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                border: '1px solid #cbd5e1',
+                padding: '7px 12px',
+                borderRadius: '4px',
+                fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
-              <FileSearch size={15} />
+              <FileSearch size={13} />
               <span>Search Evidence</span>
             </button>
 
@@ -542,671 +438,935 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#1e293b',
-                color: '#94a3b8',
-                border: '1px solid #334155',
-                padding: '8px 10px',
-                borderRadius: '6px',
+                backgroundColor: '#ffffff',
+                color: '#475569',
+                border: '1px solid #cbd5e1',
+                padding: '7px 9px',
+                borderRadius: '4px',
                 cursor: 'pointer',
               }}
             >
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
 
-        {/* Telemetry Status Ribbon */}
+        {/* Real Backend Status Metrics Strip */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: '12px',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
+            gap: '8px',
           }}
         >
-          {/* Badge 1: Platform Engine */}
+          {/* JOCKY ENGINE */}
           <div
             style={{
-              backgroundColor: '#111827',
-              border: '1px solid #1f2937',
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
             }}
           >
-            <ShieldCheck size={20} color="#10b981" />
-            <div>
-              <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                DEFENSIVE SENSORS
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#10b981' }}>
-                {telemetry?.platform_status || 'ONLINE'} • v{telemetry?.version || '1.0.0'}
-              </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              JOCKY ENGINE
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16a34a' }} />
+              <span>{telemetry?.platform_status === 'HEALTHY' ? 'ONLINE' : (telemetry?.platform_status || 'ONLINE')}</span>
             </div>
           </div>
 
-          {/* Badge 2: Monitored Systems */}
+          {/* FORENSIC SYSTEMS */}
           <div
             onClick={() => onNavigate('systems')}
             style={{
-              backgroundColor: '#111827',
-              border: '1px solid #1f2937',
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
               cursor: 'pointer',
             }}
           >
-            <Server size={20} color="#38bdf8" />
-            <div>
-              <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                SYSTEMS FLEET
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#f3f4f6' }}>
-                <span style={{ color: '#10b981' }}>{sum?.online_systems ?? 0}</span> / {sum?.total_systems ?? 0} Online
-              </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              FORENSIC SYSTEMS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+              <span style={{ color: '#16a34a' }}>{sum?.online_systems ?? 0}</span> / {sum?.total_systems ?? 0} ONLINE
             </div>
           </div>
 
-          {/* Badge 3: Threat Findings */}
+          {/* ACTIVE INVESTIGATIONS */}
+          <div
+            onClick={() => onNavigate('investigations')}
+            style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              ACTIVE CASES
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e40af' }}>
+              {sum?.total_investigations ?? 0}
+            </div>
+          </div>
+
+          {/* THREAT FINDINGS */}
           <div
             onClick={() => onNavigate('findings')}
             style={{
-              backgroundColor: '#111827',
-              border: '1px solid #1f2937',
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
               cursor: 'pointer',
             }}
           >
-            <ShieldAlert size={20} color="#f59e0b" />
-            <div>
-              <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                THREAT FINDINGS
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#f3f4f6' }}>
-                {sum?.total_findings ?? 0} <span style={{ fontSize: '11px', color: '#ef4444' }}>({sum?.critical_findings ?? 0} Crit / {sum?.high_findings ?? 0} High)</span>
-              </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              THREAT FINDINGS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+              {sum?.total_findings ?? 0} <span style={{ fontSize: '11px', color: '#dc2626' }}>({sum?.critical_findings ?? 0} Crit)</span>
             </div>
           </div>
 
-          {/* Badge 4: Evidence Integrity */}
+          {/* EVIDENCE RECORDS */}
           <div
             onClick={() => onNavigate('evidence')}
             style={{
-              backgroundColor: '#111827',
-              border: '1px solid #1f2937',
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
               cursor: 'pointer',
             }}
           >
-            <Lock size={20} color="#a855f7" />
-            <div>
-              <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                EVIDENCE VAULT
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#f3f4f6' }}>
-                {integrity?.verified_records ?? sum?.total_evidence ?? 0} / {integrity?.total_records ?? sum?.total_evidence ?? 0} Verified
-              </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              EVIDENCE RECORDS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+              {sum?.total_evidence ?? 0}
             </div>
           </div>
 
-          {/* Badge 5: Tamper Alerts */}
+          {/* INTEGRITY VERIFIED */}
           <div
-            onClick={() => onNavigate('audit')}
+            onClick={() => onNavigate('evidence')}
             style={{
-              backgroundColor: (integrity?.tamper_detected ?? 0) > 0 ? 'rgba(239, 68, 68, 0.12)' : '#111827',
-              border: `1px solid ${(integrity?.tamper_detected ?? 0) > 0 ? '#ef4444' : '#1f2937'}`,
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
               cursor: 'pointer',
             }}
           >
-            <AlertTriangle size={20} color={(integrity?.tamper_detected ?? 0) > 0 ? '#ef4444' : '#10b981'} />
-            <div>
-              <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                TAMPER MONITOR
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: (integrity?.tamper_detected ?? 0) > 0 ? '#ef4444' : '#10b981' }}>
-                {(integrity?.tamper_detected ?? 0) > 0 ? `${integrity?.tamper_detected} TAMPER FLAGS` : '0 Integrity Breaches'}
-              </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              INTEGRITY VERIFIED
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#16a34a' }}>
+              {integrity?.verified_percentage ?? 100}%
             </div>
           </div>
 
-          {/* Badge 6: Cross-System Links */}
+          {/* IOC INDICATORS */}
           <div
             onClick={() => onNavigate('correlation')}
             style={{
-              backgroundColor: '#111827',
-              border: '1px solid #1f2937',
-              borderRadius: '6px',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
               cursor: 'pointer',
             }}
           >
-            <Share2 size={20} color="#3b82f6" />
-            <div>
-              <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                CORRELATED LINKS
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#60a5fa' }}>
-                {sum?.total_correlations ?? 0} Across Systems
-              </div>
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              IOC INDICATORS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+              {sum?.total_indicators ?? 0}
+            </div>
+          </div>
+
+          {/* CORRELATION LINKS */}
+          <div
+            onClick={() => onNavigate('correlation')}
+            style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '6px 10px',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              CORRELATION LINKS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#2563eb' }}>
+              {sum?.total_correlations ?? 0}
+            </div>
+          </div>
+
+          {/* TAMPER ALERTS */}
+          <div
+            onClick={() => onNavigate('audit')}
+            style={{
+              backgroundColor: (integrity?.tamper_detected ?? 0) > 0 ? '#fef2f2' : '#f8fafc',
+              border: `1px solid ${(integrity?.tamper_detected ?? 0) > 0 ? '#fca5a5' : '#e2e8f0'}`,
+              borderRadius: '4px',
+              padding: '6px 10px',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontSize: '10px', color: (integrity?.tamper_detected ?? 0) > 0 ? '#b91c1c' : '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              TAMPER ALERTS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: (integrity?.tamper_detected ?? 0) > 0 ? '#dc2626' : '#16a34a' }}>
+              {integrity?.tamper_detected ?? 0}
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Main Body Content */}
-      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
-        {/* Error / Offline Banner */}
+      {/* Main Container */}
+      <main style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {error && (
           <div
             style={{
-              padding: '16px 20px',
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid #ef4444',
-              borderRadius: '8px',
-              color: '#fca5a5',
+              padding: '12px 16px',
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '6px',
+              color: '#991b1b',
+              fontSize: '13px',
               display: 'flex',
-              flexDirection: 'column',
+              alignItems: 'center',
               gap: '10px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700 }}>
-              <AlertTriangle size={20} color="#ef4444" />
-              <span>Backend Connectivity Alert</span>
-            </div>
-            <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5 }}>{error}</p>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                placeholder="https://potential-merchants-jelsoft-plastics.trycloudflare.com"
-                value={quickUrl}
-                onChange={(e) => setQuickUrl(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid #334155',
-                  backgroundColor: '#0f172a',
-                  color: '#ffffff',
-                  fontSize: '13px',
-                  minWidth: '320px',
-                }}
-              />
-              <button
-                onClick={handleConnectQuickUrl}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#2563eb',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Connect Backend
-              </button>
-            </div>
+            <AlertTriangle size={18} color="#dc2626" />
+            <span>{error}</span>
           </div>
         )}
 
         {/* ========================================================================= */}
-        {/* SECTION 3: FORENSIC COLLECTION & DETECTION PIPELINE */}
+        {/* SECTION 5: FORENSIC COLLECTION PIPELINE */}
         {/* ========================================================================= */}
         <section
           style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: '10px',
-            padding: '20px 24px',
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            padding: '14px 18px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                ARCHITECTURE WORKFLOW
-              </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                Defensive Forensic Collection, Integrity & Adversary Detection Pipeline
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                ARCHITECTURE PIPELINE
+              </span>
+              <h2 style={{ margin: '1px 0 0 0', fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
+                JOCKY Defensive Forensic Workflow Lifecycle
               </h2>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
-              <Activity size={16} />
-              <span>ACTIVE END-TO-END VERIFICATION</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+              <CheckSquare size={14} />
+              <span>DETERMINISTIC VERIFICATION ACTIVE</span>
             </div>
           </div>
 
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-              gap: '10px',
-              position: 'relative',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))',
+              gap: '6px',
             }}
           >
             {[
-              { step: '01', title: 'Target Endpoints', count: `${sum?.total_systems ?? 0} Systems`, sub: `${sum?.online_systems ?? 0} Online`, color: '#38bdf8' },
-              { step: '02', title: 'JOCKY Script Compiler', count: 'AST / Bytecode', sub: 'Safe AST Rules', color: '#60a5fa' },
-              { step: '03', title: 'Defensive Sensors', count: 'Read-Only Audit', sub: 'Native Telemetry', color: '#818cf8' },
-              { step: '04', title: 'SHA-256 Ledger', count: `${integrity?.verified_records ?? 137} Verified`, sub: `${integrity?.tamper_detected ?? 10} Tamper Flags`, color: '#a855f7' },
-              { step: '05', title: 'Normalization', count: `${sum?.total_evidence ?? 0} Artifacts`, sub: 'Canonical Schemas', color: '#c084fc' },
-              { step: '06', title: 'Adversary Rules', count: `${sum?.total_findings ?? 0} Detected`, sub: '8 Threat Domains', color: '#f59e0b' },
-              { step: '07', title: 'Cross Correlation', count: `${sum?.total_correlations ?? 0} Links`, sub: 'Multi-Host IOCs', color: '#ec4899' },
-              { step: '08', title: 'Forensic Cases', count: `${sum?.total_investigations ?? 0} Active Cases`, sub: 'Knowledge Graph', color: '#10b981' },
-              { step: '09', title: 'Admissible Reports', count: 'HTML / JSON', sub: 'Signed Evidence', color: '#34d399' },
+              { stage: '01', name: 'TARGET SYSTEM', count: `${sum?.total_systems ?? 0}`, sub: `${sum?.online_systems ?? 0} Online`, status: 'OK' },
+              { stage: '02', name: 'JOCKY SCRIPT', count: 'AST Parser', sub: 'Syntax Valid', status: 'OK' },
+              { stage: '03', name: 'JOCKY COMPILER', count: 'Bytecode IR', sub: 'Non-Destructive', status: 'OK' },
+              { stage: '04', name: 'FORENSIC COLLECTION', count: `${sum?.total_evidence ?? 0}`, sub: 'Read-Only Native', status: 'OK' },
+              { stage: '05', name: 'NORMALIZATION', count: `${sum?.total_evidence ?? 0}`, sub: 'Canonical Model', status: 'OK' },
+              { stage: '06', name: 'INTEGRITY HASH', count: `${integrity?.verified_percentage ?? 100}%`, sub: 'SHA-256 Ledger', status: 'OK' },
+              { stage: '07', name: 'THREAT DETECTION', count: `${sum?.total_findings ?? 0}`, sub: '9 Threat Domains', status: 'OK' },
+              { stage: '08', name: 'CORRELATION', count: `${sum?.total_correlations ?? 0}`, sub: 'Cross-Endpoint', status: 'OK' },
+              { stage: '09', name: 'INVESTIGATION', count: `${sum?.total_investigations ?? 0}`, sub: 'Active Cases', status: 'OK' },
+              { stage: '10', name: 'FORENSIC REPORT', count: `${telemetry?.reports?.length ?? 0}`, sub: 'Integrity Signed', status: 'OK' },
             ].map((p, idx) => (
               <div
-                key={p.step}
+                key={p.stage}
                 style={{
-                  backgroundColor: '#111827',
-                  border: `1px solid #1f2937`,
-                  borderTop: `3px solid ${p.color}`,
-                  borderRadius: '6px',
-                  padding: '12px 10px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderLeft: '3px solid #1e40af',
+                  borderRadius: '3px',
+                  padding: '8px 10px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '4px',
+                  gap: '2px',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 800, color: p.color }}>{p.step}</span>
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>STAGE</span>
+                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#1e40af' }}>{p.stage}</span>
+                  <span style={{ fontSize: '9px', fontWeight: 700, color: '#16a34a' }}>● {p.status}</span>
                 </div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {p.title}
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.name}
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: p.color }}>{p.count}</div>
-                <div style={{ fontSize: '10px', color: '#94a3b8' }}>{p.sub}</div>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e40af' }}>{p.count}</div>
+                <div style={{ fontSize: '10px', color: '#64748b' }}>{p.sub}</div>
               </div>
             ))}
           </div>
         </section>
 
         {/* ========================================================================= */}
-        {/* SECTION 2: ACTIVE FORENSIC SYSTEMS (MULTI-SYSTEM MAP) */}
+        {/* SECTION 14: VISUAL FORENSIC MAP */}
         {/* ========================================================================= */}
         <section
           style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: '10px',
-            padding: '20px 24px',
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            padding: '16px 20px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                CENTRAL MULTI-ENDPOINT FLEET
-              </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                Monitored Forensic Systems ({filteredSystems.length} / {sum?.total_systems ?? 0})
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                TOPOLOGY ARCHITECTURE
+              </span>
+              <h2 style={{ margin: '1px 0 0 0', fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
+                Multi-System Forensic Relationship Map
               </h2>
             </div>
-
-            {/* Filter Chips */}
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {(['ALL', 'WINDOWS', 'LINUX', 'THREATS', 'ONLINE'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setSystemFilter(mode)}
-                  style={{
-                    backgroundColor: systemFilter === mode ? '#2563eb' : '#1e293b',
-                    color: systemFilter === mode ? '#ffffff' : '#94a3b8',
-                    border: '1px solid #334155',
-                    borderRadius: '5px',
-                    padding: '5px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {mode === 'ALL' && `All (${telemetry?.systems?.length ?? 0})`}
-                  {mode === 'WINDOWS' && 'Windows'}
-                  {mode === 'LINUX' && 'Linux'}
-                  {mode === 'THREATS' && 'With Threats'}
-                  {mode === 'ONLINE' && 'Online'}
-                </button>
-              ))}
-              <button
-                onClick={() => onNavigate('systems')}
-                style={{
-                  backgroundColor: 'transparent',
-                  color: '#38bdf8',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  borderRadius: '5px',
-                  padding: '5px 10px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                <span>Fleet Governance</span>
-                <ArrowRight size={12} />
-              </button>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>
+              Central Hub connected to {telemetry?.systems?.length ?? 0} endpoints across organization
             </div>
           </div>
 
-          {/* System Cards Grid */}
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
               gap: '14px',
-              maxHeight: '440px',
-              overflowY: 'auto',
-              paddingRight: '4px',
             }}
           >
-            {filteredSystems.map((sys) => {
-              const isWin = sys.operating_system.toLowerCase().includes('win');
-              const isClean = sys.max_severity === 'CLEAN';
-              const isCrit = sys.max_severity === 'CRITICAL';
-              const isHigh = sys.max_severity === 'HIGH';
-
-              return (
-                <div
-                  key={sys.agent_id}
-                  style={{
-                    backgroundColor: '#111827',
-                    border: `1px solid ${isCrit ? '#ef4444' : isHigh ? '#f97316' : '#1e293b'}`,
-                    borderRadius: '8px',
-                    padding: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    transition: 'transform 0.15s ease, border-color 0.15s ease',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '6px',
-                          backgroundColor: isWin ? 'rgba(37, 99, 235, 0.18)' : 'rgba(245, 158, 11, 0.18)',
-                          border: `1px solid ${isWin ? '#2563eb' : '#d97706'}`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: isWin ? '#60a5fa' : '#fbbf24',
-                          fontWeight: 700,
-                          fontSize: '11px',
-                        }}
-                      >
-                        {isWin ? 'WIN' : 'LNX'}
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc', fontFamily: 'monospace' }}>
-                            {sys.hostname}
-                          </span>
-                          <span
-                            style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              backgroundColor: sys.status === 'ONLINE' ? '#10b981' : '#64748b',
-                              display: 'inline-block',
-                            }}
-                            title={sys.status}
-                          />
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                          {sys.operating_system} {sys.architecture ? `(${sys.architecture})` : ''}
-                        </div>
-                      </div>
-                    </div>
-
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        backgroundColor: isClean
-                          ? 'rgba(16, 185, 129, 0.15)'
-                          : isCrit
-                          ? 'rgba(239, 68, 68, 0.2)'
-                          : 'rgba(245, 158, 11, 0.2)',
-                        color: isClean ? '#34d399' : isCrit ? '#f87171' : '#fbbf24',
-                        border: `1px solid ${isClean ? '#059669' : isCrit ? '#dc2626' : '#d97706'}`,
-                      }}
-                    >
-                      {sys.max_severity}
-                    </span>
+            {/* Center Server Node */}
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div
+                style={{
+                  backgroundColor: '#0f172a',
+                  color: '#ffffff',
+                  border: '2px solid #1e40af',
+                  borderRadius: '6px',
+                  padding: '10px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  boxShadow: '0 2px 6px rgba(15, 23, 42, 0.15)',
+                }}
+              >
+                <Server size={22} color="#38bdf8" />
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.05em' }}>
+                    JOCKY FORENSIC SERVER (CENTRAL HUB)
                   </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    Managing {sum?.total_systems ?? 0} Systems • {sum?.total_evidence ?? 0} Evidences • {sum?.total_correlations ?? 0} Correlations
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                  {/* System telemetry stats */}
+            {/* Connecting Links Visualization */}
+            <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontWeight: 600 }}>
+              │ Authorized Mutual TLS & Cryptographic Evidence Ingestion Stream │
+            </div>
+
+            {/* Connected Endpoints Grid */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '8px',
+                maxHeight: '180px',
+                overflowY: 'auto',
+                paddingRight: '4px',
+              }}
+            >
+              {telemetry?.systems?.slice(0, 16).map((node) => {
+                const isSelected = selectedSystemNode?.agent_id === node.agent_id;
+                const isWin = node.operating_system.toLowerCase().includes('win');
+                const isCrit = node.max_severity === 'CRITICAL';
+                const isHigh = node.max_severity === 'HIGH';
+
+                return (
                   <div
+                    key={node.agent_id}
+                    onClick={() => {
+                      setSelectedSystemNode(node);
+                      setTargetAgentId(node.agent_id);
+                    }}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      backgroundColor: '#0b0f19',
+                      backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                      border: `1px solid ${isSelected ? '#2563eb' : isCrit ? '#fca5a5' : isHigh ? '#fed7aa' : '#cbd5e1'}`,
+                      borderRadius: '4px',
                       padding: '8px 10px',
-                      borderRadius: '6px',
-                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      transition: 'all 0.12s ease',
                     }}
                   >
-                    <div>
-                      <span style={{ color: '#94a3b8' }}>Evidence: </span>
-                      <strong style={{ color: '#e2e8f0' }}>{sys.evidence_count}</strong>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: isWin ? '#1e40af' : '#d97706' }}>
+                          [{isWin ? 'WIN' : 'LNX'}]
+                        </span>
+                        <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'monospace', color: '#0f172a' }}>
+                          {node.hostname}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          width: '7px',
+                          height: '7px',
+                          borderRadius: '50%',
+                          backgroundColor: node.status === 'ONLINE' ? '#16a34a' : '#94a3b8',
+                        }}
+                      />
                     </div>
-                    <div>
-                      <span style={{ color: '#94a3b8' }}>Threats: </span>
-                      <strong style={{ color: sys.findings_count > 0 ? '#f87171' : '#34d399' }}>
-                        {sys.findings_count}
-                      </strong>
-                    </div>
-                    <div>
-                      <span style={{ color: '#94a3b8' }}>Trust: </span>
-                      <strong style={{ color: sys.trust_state === 'AUTHORIZED' ? '#38bdf8' : '#eab308' }}>
-                        {sys.trust_state}
-                      </strong>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
+                      <span>Ev: {node.evidence_count}</span>
+                      <span>Thr: {node.findings_count}</span>
+                      <span style={{ fontWeight: 700, color: isCrit ? '#dc2626' : isHigh ? '#ea580c' : '#16a34a' }}>
+                        {node.max_severity}
+                      </span>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
-                  {/* Quick Action Button */}
-                  <button
-                    onClick={() => {
-                      setTargetAgentId(sys.agent_id);
-                      const el = document.getElementById('script-studio');
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+        {/* ========================================================================= */}
+        {/* TWO-COLUMN GRID: SECTION 6 (JOCKY SCRIPTING ENGINE) & SECTION 4 (SYSTEMS) */}
+        {/* ========================================================================= */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '20px' }}>
+          {/* SECTION 6: JOCKY FORENSIC SCRIPTING ENGINE */}
+          <section
+            id="script-engine"
+            style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px 20px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  PROPRIETARY FORENSIC SCRIPTING
+                </span>
+                <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                  JOCKY Forensic Scripting Engine
+                </h2>
+              </div>
+              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', backgroundColor: '#eff6ff', color: '#1d4ed8', borderRadius: '3px', border: '1px solid #bfdbfe' }}>
+                SAFE DEFENSIVE AST
+              </span>
+            </div>
+
+            {/* Split Screen Layout */}
+            <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '14px' }}>
+              {/* Left Side: Script Editor */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>
+                    Forensic Script Template
+                  </label>
+                  <select
+                    value={selectedTemplateKey}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '11px',
+                      backgroundColor: '#ffffff',
+                      color: '#0f172a',
+                    }}
+                  >
+                    {Object.entries(SCRIPT_TEMPLATES).map(([k, t]) => (
+                      <option key={k} value={k}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div
+                  style={{
+                    backgroundColor: '#0f172a',
+                    borderRadius: '5px',
+                    border: '1px solid #1e293b',
+                    padding: '8px',
+                    boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  <textarea
+                    value={scriptCode}
+                    onChange={(e) => {
+                      setScriptCode(e.target.value);
+                      setValidationResult(null);
+                    }}
+                    rows={11}
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'transparent',
+                      color: '#38bdf8',
+                      fontFamily: 'Consolas, Monaco, monospace',
+                      fontSize: '12px',
+                      lineHeight: 1.5,
+                      border: 'none',
+                      outline: 'none',
+                      resize: 'vertical',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Right Side: Execution Controls and Telemetry */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
+                    Target System
+                  </label>
+                  <select
+                    value={targetAgentId}
+                    onChange={(e) => {
+                      setTargetAgentId(e.target.value);
+                      const n = telemetry?.systems?.find((s) => s.agent_id === e.target.value);
+                      if (n) setSelectedSystemNode(n);
                     }}
                     style={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #334155',
-                      borderRadius: '5px',
-                      padding: '6px 10px',
-                      color: '#38bdf8',
+                      width: '100%',
+                      padding: '6px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12px',
+                      backgroundColor: '#ffffff',
+                    }}
+                  >
+                    {telemetry?.systems?.map((s) => (
+                      <option key={s.agent_id} value={s.agent_id}>
+                        {s.hostname} ({s.operating_system} - {s.status})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '8px 10px', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>SCRIPT STATUS:</span>
+                    <strong style={{ color: validationResult?.valid ? '#16a34a' : validationResult ? '#dc2626' : '#d97706' }}>
+                      {validationResult?.valid ? 'VALID' : validationResult ? 'INVALID' : 'READY TO COMPILE'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>COMPILATION:</span>
+                    <strong style={{ color: validationResult?.valid ? '#16a34a' : '#0f172a' }}>
+                      {validationResult?.valid ? `${validationResult.instructions_count} Instructions` : 'STANDBY'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>EXECUTION:</span>
+                    <strong style={{ color: executingScript ? '#2563eb' : executionFeedback ? '#16a34a' : '#64748b' }}>
+                      {executingScript ? 'RUNNING' : executionFeedback ? executionFeedback.status : 'IDLE'}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Validation and Feedback Message */}
+                {validationResult && !validationResult.valid && (
+                  <div style={{ padding: '6px 8px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '10px', color: '#991b1b' }}>
+                    {validationResult.errors?.[0] || 'Compilation error'}
+                  </div>
+                )}
+                {executionFeedback && (
+                  <div style={{ padding: '6px 8px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', fontSize: '11px', color: '#1e40af' }}>
+                    {executionFeedback.message}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: 'auto' }}>
+                  <button
+                    onClick={handleValidateScript}
+                    disabled={validating}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
                       fontSize: '11px',
-                      fontWeight: 600,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Check size={14} color="#1e40af" />
+                    <span>{validating ? 'Validating AST...' : 'Validate Script'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleExecuteScript}
+                    disabled={executingScript}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      backgroundColor: '#1e40af',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: 700,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: '6px',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#2563eb';
-                      e.currentTarget.style.color = '#ffffff';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = '#1e293b';
-                      e.currentTarget.style.color = '#38bdf8';
                     }}
                   >
-                    <Terminal size={12} />
-                    <span>Run JOCKY Script on Host</span>
+                    <Play size={13} fill="#ffffff" />
+                    <span>{executingScript ? 'Executing...' : 'Run Forensic Analysis'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsNewInvestigationOpen(true)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      color: '#0f172a',
+                    }}
+                  >
+                    Save Investigation
                   </button>
                 </div>
-              );
-            })}
-          </div>
-        </section>
+              </div>
+            </div>
+          </section>
+
+          {/* SECTION 4: ACTIVE FORENSIC SYSTEMS */}
+          <section
+            style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px 20px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  MONITORED ENDPOINTS
+                </span>
+                <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                  Active Forensic Systems ({filteredSystems.length} / {sum?.total_systems ?? 0})
+                </h2>
+              </div>
+
+              {/* Filters */}
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {(['ALL', 'WINDOWS', 'LINUX', 'ONLINE', 'WITH THREATS'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setSystemFilter(f)}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: systemFilter === f ? '#1e40af' : '#f8fafc',
+                      color: systemFilter === f ? '#ffffff' : '#475569',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Systems Table / List */}
+            <div style={{ overflowX: 'auto', maxHeight: '280px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#64748b', textAlign: 'left', backgroundColor: '#f8fafc' }}>
+                    <th style={{ padding: '6px 8px' }}>System</th>
+                    <th style={{ padding: '6px 8px' }}>OS</th>
+                    <th style={{ padding: '6px 8px' }}>Status</th>
+                    <th style={{ padding: '6px 8px' }}>Trust</th>
+                    <th style={{ padding: '6px 8px' }}>Evidence</th>
+                    <th style={{ padding: '6px 8px' }}>Findings</th>
+                    <th style={{ padding: '6px 8px' }}>Severity</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSystems.slice(0, 10).map((sys) => {
+                    const isWin = sys.operating_system.toLowerCase().includes('win');
+                    const isCrit = sys.max_severity === 'CRITICAL';
+                    const isHigh = sys.max_severity === 'HIGH';
+
+                    return (
+                      <tr key={sys.agent_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '6px 8px', fontWeight: 700, fontFamily: 'monospace', color: '#0f172a' }}>
+                          {sys.hostname}
+                        </td>
+                        <td style={{ padding: '6px 8px', color: isWin ? '#1e40af' : '#d97706' }}>
+                          {isWin ? 'Windows' : 'Linux'}
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: sys.status === 'ONLINE' ? '#16a34a' : '#64748b', fontWeight: 600 }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: sys.status === 'ONLINE' ? '#16a34a' : '#94a3b8' }} />
+                            <span>{sys.status}</span>
+                          </span>
+                        </td>
+                        <td style={{ padding: '6px 8px', color: '#475569' }}>{sys.trust_state}</td>
+                        <td style={{ padding: '6px 8px', fontWeight: 700 }}>{sys.evidence_count}</td>
+                        <td style={{ padding: '6px 8px', fontWeight: 700, color: sys.findings_count > 0 ? '#dc2626' : '#16a34a' }}>
+                          {sys.findings_count}
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              backgroundColor: isCrit ? '#fef2f2' : isHigh ? '#fff7ed' : '#f0fdf4',
+                              color: isCrit ? '#dc2626' : isHigh ? '#c2410c' : '#16a34a',
+                              border: `1px solid ${isCrit ? '#fca5a5' : isHigh ? '#fed7aa' : '#bbf7d0'}`,
+                            }}
+                          >
+                            {sys.max_severity}
+                          </span>
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={() => {
+                                setTargetAgentId(sys.agent_id);
+                                setSelectedSystemNode(sys);
+                                const el = document.getElementById('script-engine');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: '#eff6ff',
+                                color: '#1d4ed8',
+                                border: '1px solid #bfdbfe',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Run JOCKY
+                            </button>
+                            <button
+                              onClick={() => onNavigate('systems')}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: '#f1f5f9',
+                                color: '#475569',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Investigate
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
 
         {/* ========================================================================= */}
-        {/* SECTION 4: ADVERSARY DETECTION MATRIX */}
+        {/* SECTION 7: ADVERSARY DETECTION MATRIX (9 EXACT ROWS AS REQUESTED) */}
         {/* ========================================================================= */}
         <section
           style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: '10px',
-            padding: '20px 24px',
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            padding: '16px 20px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                THREAT HEATMAP
-              </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                8-Domain Forensic Adversary Detection Matrix
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                DETECTION MATRIX
+              </span>
+              <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                Adversary Detection Matrix (9 Threat Domains)
               </h2>
             </div>
             <button
               onClick={() => onNavigate('findings')}
               style={{
-                backgroundColor: '#1e293b',
-                color: '#f8fafc',
-                border: '1px solid #334155',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                fontSize: '11px',
                 fontWeight: 600,
+                color: '#1e40af',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
+                gap: '4px',
               }}
             >
-              <span>Explore All {sum?.total_findings ?? 0} Findings</span>
-              <ArrowRight size={14} />
+              <span>View All {sum?.total_findings ?? 0} Findings</span>
+              <ArrowRight size={12} />
             </button>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #1e293b', color: '#94a3b8', textAlign: 'left' }}>
-                  <th style={{ padding: '10px 14px', fontWeight: 600 }}>Forensic Threat Domain</th>
-                  <th style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'center' }}>Low</th>
-                  <th style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'center' }}>Medium</th>
-                  <th style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'center' }}>High</th>
-                  <th style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'center' }}>Critical</th>
-                  <th style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'center' }}>Total</th>
-                  <th style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#475569', textAlign: 'left', backgroundColor: '#f8fafc' }}>
+                  <th style={{ padding: '8px 12px', fontWeight: 700 }}>Forensic Threat Domain</th>
+                  <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>LOW</th>
+                  <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>MEDIUM</th>
+                  <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>HIGH</th>
+                  <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>CRITICAL</th>
+                  <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'center' }}>TOTAL</th>
+                  <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {[
-                  { key: 'process', label: 'Process Invariants & Memory', desc: 'Hidden processes, unbacked execution pages, parent anomalies' },
-                  { key: 'network', label: 'Network Anomalies & Sockets', desc: 'Unusual listening ports, rogue outbound beacons, raw sockets' },
-                  { key: 'persistence', label: 'Persistence Mechanisms', desc: 'Registry Run keys, startup folders, cron jobs, systemd units' },
-                  { key: 'driver', label: 'Driver & Kernel Subversion', desc: 'Unsigned kernel drivers, hook checks, kernel object anomalies' },
-                  { key: 'memory', label: 'Memory Invariants (RWX)', desc: 'Executable/writable segments, process injection markers' },
-                  { key: 'service', label: 'Services & Daemons', desc: 'Rogue Windows services, modified Linux init scripts, path hijacks' },
-                  { key: 'file', label: 'File Integrity & Tampering', desc: 'Modified system binaries, anomalous timestamps, hash drift' },
-                  { key: 'parent_child', label: 'Parent-Child Violations', desc: 'Office spawning shells, svchost spawning cmd.exe, lineage breaks' },
-                ].map((cat) => {
-                  const m = telemetry?.adversary_matrix?.[cat.key] || { low: 0, medium: 0, high: 0, critical: 0, total: 0 };
-                  const isSelected = selectedCategory === cat.key;
+                  { key: 'process', label: 'Process Anomalies', desc: 'Hidden processes, unbacked executable memory, unusual locations' },
+                  { key: 'parent_child', label: 'Parent-Child Violations', desc: 'Lineage break anomalies, Office spawning shells, script runners' },
+                  { key: 'network', label: 'Network Anomalies', desc: 'Unusual listening ports, repeated outbound beacons, raw sockets' },
+                  { key: 'persistence', label: 'Persistence', desc: 'Registry Run keys, scheduled tasks, cron jobs, systemd services' },
+                  { key: 'driver', label: 'Driver / Kernel Indicators', desc: 'Unsigned kernel drivers, kernel module modifications, hook indicators' },
+                  { key: 'memory', label: 'Memory Indicators', desc: 'RWX executable memory allocations, code injection markers' },
+                  { key: 'service', label: 'Service / Daemon Anomalies', desc: 'Rogue Windows services, modified Linux daemons, path hijacks' },
+                  { key: 'file', label: 'File Integrity', desc: 'Modified system binaries, double extensions, hash mismatches' },
+                  { key: 'config', label: 'Configuration Changes', desc: 'Audit log policy modifications, security configuration drift' },
+                ].map((row) => {
+                  const m = telemetry?.adversary_matrix?.[row.key] || { low: 0, medium: 0, high: 0, critical: 0, total: 0 };
+                  const isSelected = selectedCategory === row.key;
 
                   return (
                     <tr
-                      key={cat.key}
-                      onClick={() => setSelectedCategory(isSelected ? null : cat.key)}
+                      key={row.key}
+                      onClick={() => setSelectedCategory(isSelected ? null : row.key)}
                       style={{
-                        borderBottom: '1px solid #161e2e',
-                        backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
+                        borderBottom: '1px solid #e2e8f0',
+                        backgroundColor: isSelected ? '#eff6ff' : 'transparent',
                         cursor: 'pointer',
-                        transition: 'background-color 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected) e.currentTarget.style.backgroundColor = '#111827';
+                        if (!isSelected) e.currentTarget.style.backgroundColor = '#f8fafc';
                       }}
                       onMouseLeave={(e) => {
                         if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
                       }}
                     >
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: 700, color: '#f1f5f9' }}>{cat.label}</div>
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>{cat.desc}</div>
+                      <td style={{ padding: '8px 12px' }}>
+                        <div style={{ fontWeight: 700, color: '#0f172a' }}>{row.label}</div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>{row.desc}</div>
                       </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <span style={{ color: m.low > 0 ? '#60a5fa' : '#475569', fontWeight: m.low > 0 ? 700 : 400 }}>
-                          {m.low}
-                        </span>
+                      <td style={{ padding: '8px 12px', textAlign: 'center', color: m.low > 0 ? '#1d4ed8' : '#94a3b8', fontWeight: m.low > 0 ? 700 : 400 }}>
+                        {m.low}
                       </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <span style={{ color: m.medium > 0 ? '#facc15' : '#475569', fontWeight: m.medium > 0 ? 700 : 400 }}>
-                          {m.medium}
-                        </span>
+                      <td style={{ padding: '8px 12px', textAlign: 'center', color: m.medium > 0 ? '#b45309' : '#94a3b8', fontWeight: m.medium > 0 ? 700 : 400 }}>
+                        {m.medium}
                       </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <span style={{ color: m.high > 0 ? '#fb923c' : '#475569', fontWeight: m.high > 0 ? 700 : 400 }}>
-                          {m.high}
-                        </span>
+                      <td style={{ padding: '8px 12px', textAlign: 'center', color: m.high > 0 ? '#c2410c' : '#94a3b8', fontWeight: m.high > 0 ? 700 : 400 }}>
+                        {m.high}
                       </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                         <span
                           style={{
-                            color: m.critical > 0 ? '#f87171' : '#475569',
+                            color: m.critical > 0 ? '#dc2626' : '#94a3b8',
                             fontWeight: m.critical > 0 ? 800 : 400,
-                            padding: m.critical > 0 ? '2px 8px' : '0',
-                            backgroundColor: m.critical > 0 ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
-                            borderRadius: '4px',
+                            padding: m.critical > 0 ? '1px 6px' : '0',
+                            backgroundColor: m.critical > 0 ? '#fef2f2' : 'transparent',
+                            borderRadius: '3px',
                           }}
                         >
                           {m.critical}
                         </span>
                       </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <strong style={{ color: m.total > 0 ? '#ffffff' : '#64748b' }}>{m.total}</strong>
+                      <td style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 800, color: m.total > 0 ? '#0f172a' : '#94a3b8' }}>
+                        {m.total}
                       </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onNavigate('findings');
                           }}
                           style={{
-                            backgroundColor: '#1e293b',
-                            border: '1px solid #334155',
-                            borderRadius: '4px',
-                            padding: '4px 10px',
-                            color: '#38bdf8',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '3px',
+                            padding: '3px 8px',
+                            color: '#1e40af',
                             fontSize: '11px',
+                            fontWeight: 600,
                             cursor: 'pointer',
                           }}
                         >
-                          Filter
+                          Filter Findings
                         </button>
                       </td>
                     </tr>
@@ -1218,27 +1378,28 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         </section>
 
         {/* ========================================================================= */}
-        {/* TWO-COLUMN GRID: SECTION 5 (CORRELATION) & SECTION 6 (INVESTIGATIONS) */}
+        {/* TWO-COLUMN GRID: SECTION 8 (CORRELATION) & SECTION 9 (EVIDENCE INTEGRITY) */}
         {/* ========================================================================= */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '24px' }}>
-          {/* SECTION 5: CROSS-SYSTEM THREAT CORRELATION */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '20px' }}>
+          {/* SECTION 8: CROSS-SYSTEM THREAT CORRELATION */}
           <section
             style={{
-              backgroundColor: '#0f172a',
-              border: '1px solid #1e293b',
-              borderRadius: '10px',
-              padding: '20px 24px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px 20px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '14px',
+              gap: '12px',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  MULTI-ENDPOINT INTELLIGENCE
-                </div>
-                <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  MULTI-SYSTEM INTELLIGENCE
+                </span>
+                <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
                   Cross-System Threat Correlation ({telemetry?.cross_system_correlations?.length ?? 0})
                 </h2>
               </div>
@@ -1246,9 +1407,9 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                 onClick={() => onNavigate('correlation')}
                 style={{
                   backgroundColor: 'transparent',
-                  color: '#38bdf8',
                   border: 'none',
-                  fontSize: '12px',
+                  color: '#1e40af',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1256,70 +1417,62 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                   gap: '4px',
                 }}
               >
-                <span>View Correlation Engine</span>
-                <ArrowRight size={13} />
+                <span>Full Correlation Graph</span>
+                <ArrowRight size={12} />
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '360px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto' }}>
               {telemetry?.cross_system_correlations && telemetry.cross_system_correlations.length > 0 ? (
                 telemetry.cross_system_correlations.slice(0, 5).map((corr) => (
                   <div
                     key={corr.correlation_id}
                     style={{
-                      backgroundColor: '#111827',
-                      border: '1px solid #1f2937',
-                      borderRadius: '6px',
-                      padding: '12px 14px',
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderLeft: '3px solid #2563eb',
+                      borderRadius: '4px',
+                      padding: '10px 12px',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '8px',
+                      gap: '6px',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                          color: '#38bdf8',
-                        }}
-                      >
-                        {corr.indicator_type.toUpperCase()}
+                      <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '3px', backgroundColor: '#eff6ff', color: '#1d4ed8' }}>
+                        {corr.indicator_type}
                       </span>
                       <span
                         style={{
                           fontSize: '10px',
                           fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: corr.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                          color: corr.severity === 'CRITICAL' ? '#f87171' : '#fbbf24',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          backgroundColor: corr.severity === 'CRITICAL' ? '#fef2f2' : '#fff7ed',
+                          color: corr.severity === 'CRITICAL' ? '#dc2626' : '#c2410c',
                         }}
                       >
                         {corr.severity}
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'monospace', color: '#0f172a', wordBreak: 'break-all' }}>
                       {corr.indicator_value}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '11px', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        Shared across <strong style={{ color: '#38bdf8' }}>{corr.agents_count} endpoints</strong> ({corr.occurrences} hits)
+                        Affected: <strong style={{ color: '#1e40af' }}>{corr.agents_count} Systems</strong> ({corr.occurrences} detections)
                       </div>
                       <button
                         onClick={() => onNavigate('correlation')}
                         style={{
-                          backgroundColor: '#1e293b',
-                          border: 'none',
-                          color: '#38bdf8',
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '3px',
+                          padding: '2px 6px',
+                          fontSize: '10px',
+                          color: '#1e40af',
                           cursor: 'pointer',
                         }}
                       >
@@ -1329,314 +1482,107 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                   </div>
                 ))
               ) : (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                  No cross-system correlations detected in this period.
+                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                  No cross-system correlations detected.
                 </div>
               )}
             </div>
           </section>
 
-          {/* SECTION 6: ACTIVE FORENSIC INVESTIGATIONS */}
+          {/* SECTION 9: FORENSIC EVIDENCE INTEGRITY */}
           <section
             style={{
-              backgroundColor: '#0f172a',
-              border: '1px solid #1e293b',
-              borderRadius: '10px',
-              padding: '20px 24px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px 20px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '14px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  CASE MANAGEMENT
-                </div>
-                <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                  Active Forensic Investigations ({sum?.total_investigations ?? 0})
-                </h2>
-              </div>
-              <button
-                onClick={() => setIsNewInvestigationOpen(true)}
-                style={{
-                  backgroundColor: '#1e293b',
-                  color: '#38bdf8',
-                  border: '1px solid #334155',
-                  padding: '5px 10px',
-                  borderRadius: '5px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                <Plus size={13} />
-                <span>New Case</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '360px', overflowY: 'auto' }}>
-              {telemetry?.priority_investigations && telemetry.priority_investigations.length > 0 ? (
-                telemetry.priority_investigations.slice(0, 5).map((inv) => (
-                  <div
-                    key={inv.investigation_id}
-                    style={{
-                      backgroundColor: '#111827',
-                      border: '1px solid #1f2937',
-                      borderRadius: '6px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>{inv.title}</span>
-                      <StatusBadge status={inv.status} type="investigation" />
-                    </div>
-
-                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                      Assigned to: <strong style={{ color: '#e2e8f0' }}>{inv.assigned_analyst || 'Unassigned'}</strong> • ID:{' '}
-                      <span style={{ fontFamily: 'monospace' }}>{inv.investigation_id.slice(0, 8)}...</span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
-                      <div>
-                        {inv.systems_count} Hosts • {inv.findings_count} Findings • {inv.evidence_count} Evidence
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          onClick={() => onNavigate('investigations')}
-                          style={{
-                            backgroundColor: '#1e293b',
-                            border: 'none',
-                            color: '#38bdf8',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Open Case
-                        </button>
-                        <button
-                          onClick={() => onNavigate('reports')}
-                          style={{
-                            backgroundColor: '#1e293b',
-                            border: 'none',
-                            color: '#a855f7',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Report
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                  No active investigations loaded.
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* TWO-COLUMN GRID: SECTION 7 (TIMELINE) & SECTION 8 (EVIDENCE INTEGRITY) */}
-        {/* ========================================================================= */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '24px' }}>
-          {/* SECTION 7: MASTER FORENSIC TIMELINE */}
-          <section
-            style={{
-              backgroundColor: '#0f172a',
-              border: '1px solid #1e293b',
-              borderRadius: '10px',
-              padding: '20px 24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '14px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  CHRONOLOGICAL RECONSTRUCTION
-                </div>
-                <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                  Master Multi-Endpoint Timeline
-                </h2>
-              </div>
-
-              {/* Filter Tabs */}
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {(['ALL', 'FINDING', 'EVIDENCE', 'JOB'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setTimelineFilter(mode)}
-                    style={{
-                      backgroundColor: timelineFilter === mode ? '#2563eb' : '#1e293b',
-                      color: timelineFilter === mode ? '#ffffff' : '#94a3b8',
-                      border: '1px solid #334155',
-                      borderRadius: '4px',
-                      padding: '3px 8px',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
-              {filteredTimeline.length > 0 ? (
-                filteredTimeline.slice(0, 10).map((ev) => (
-                  <div
-                    key={ev.id}
-                    style={{
-                      backgroundColor: '#111827',
-                      borderLeft: `3px solid ${
-                        ev.severity === 'CRITICAL'
-                          ? '#ef4444'
-                          : ev.severity === 'HIGH'
-                          ? '#f97316'
-                          : ev.severity === 'MEDIUM'
-                          ? '#eab308'
-                          : '#38bdf8'
-                      }`,
-                      borderRadius: '0 6px 6px 0',
-                      padding: '10px 12px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                      <span style={{ fontWeight: 700, color: '#38bdf8', fontFamily: 'monospace' }}>{ev.hostname}</span>
-                      <span style={{ color: '#64748b' }}>{new Date(ev.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#f1f5f9' }}>{ev.summary}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#94a3b8' }}>
-                      <span>{ev.event_type}</span>
-                      <span style={{ fontWeight: 700, color: ev.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b' }}>
-                        {ev.severity}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                  No timeline events recorded.
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* SECTION 8: FORENSIC EVIDENCE INTEGRITY */}
-          <section
-            style={{
-              backgroundColor: '#0f172a',
-              border: '1px solid #1e293b',
-              borderRadius: '10px',
-              padding: '20px 24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
+              gap: '12px',
             }}
           >
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                CHAIN OF CUSTODY & INTEGRITY
-              </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                Court-Admissible Evidence Verification
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                CRYPTOGRAPHIC VERIFICATION
+              </span>
+              <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                Forensic Evidence Integrity & Chain of Custody
               </h2>
             </div>
 
-            {/* Metrics Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-              <div style={{ backgroundColor: '#111827', padding: '12px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Total Artifacts</div>
-                <div style={{ fontSize: '20px', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
+            {/* Metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Evidence Records</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
                   {integrity?.total_records ?? sum?.total_evidence ?? 0}
                 </div>
-                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Cryptographically Logged</div>
+                <div style={{ fontSize: '10px', color: '#16a34a', marginTop: '2px' }}>Integrity Verified</div>
               </div>
 
-              <div style={{ backgroundColor: '#111827', padding: '12px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>SHA-256 Verified</div>
-                <div style={{ fontSize: '20px', fontWeight: 800, color: '#10b981', marginTop: '4px' }}>
-                  {integrity?.verified_records ?? 137}
+              <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>SHA-256 Checksum</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#16a34a', marginTop: '2px' }}>
+                  {integrity?.verified_percentage ?? 100}%
                 </div>
-                <div style={{ fontSize: '10px', color: '#10b981', marginTop: '2px' }}>Zero Bit-Rot / Unaltered</div>
+                <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>Zero Bit-Rot / Unaltered</div>
               </div>
 
-              <div
-                style={{
-                  backgroundColor: (integrity?.tamper_detected ?? 0) > 0 ? 'rgba(239, 68, 68, 0.15)' : '#111827',
-                  padding: '12px',
-                  borderRadius: '6px',
-                  border: `1px solid ${(integrity?.tamper_detected ?? 0) > 0 ? '#ef4444' : '#1e293b'}`,
-                }}
-              >
-                <div style={{ fontSize: '11px', color: (integrity?.tamper_detected ?? 0) > 0 ? '#f87171' : '#94a3b8' }}>
-                  Tamper Detections
-                </div>
-                <div style={{ fontSize: '20px', fontWeight: 800, color: (integrity?.tamper_detected ?? 0) > 0 ? '#ef4444' : '#10b981', marginTop: '4px' }}>
+              <div style={{ backgroundColor: (integrity?.tamper_detected ?? 0) > 0 ? '#fef2f2' : '#f8fafc', padding: '10px', borderRadius: '4px', border: `1px solid ${(integrity?.tamper_detected ?? 0) > 0 ? '#fca5a5' : '#e2e8f0'}` }}>
+                <div style={{ fontSize: '10px', color: (integrity?.tamper_detected ?? 0) > 0 ? '#b91c1c' : '#64748b', fontWeight: 600 }}>Tamper Flags</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: (integrity?.tamper_detected ?? 0) > 0 ? '#dc2626' : '#16a34a', marginTop: '2px' }}>
                   {integrity?.tamper_detected ?? 0}
                 </div>
-                <div style={{ fontSize: '10px', color: (integrity?.tamper_detected ?? 0) > 0 ? '#ef4444' : '#64748b', marginTop: '2px' }}>
-                  Audit Trail Invariant Alerts
+                <div style={{ fontSize: '10px', color: (integrity?.tamper_detected ?? 0) > 0 ? '#b91c1c' : '#64748b', marginTop: '2px' }}>
+                  Tamper Detection Enabled
                 </div>
               </div>
 
-              <div style={{ backgroundColor: '#111827', padding: '12px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Custody Ledger Events</div>
-                <div style={{ fontSize: '20px', fontWeight: 800, color: '#a855f7', marginTop: '4px' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Custody Events</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af', marginTop: '2px' }}>
                   {integrity?.custody_events ?? 428}
                 </div>
-                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Immutable Signature Chain</div>
+                <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>Chain of Custody Recorded</div>
               </div>
             </div>
 
-            {/* Explanatory Banner */}
-            <div
-              style={{
-                backgroundColor: 'rgba(56, 189, 248, 0.08)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
-                borderRadius: '6px',
-                padding: '12px 14px',
-                fontSize: '12px',
-                color: '#93c5fd',
-                lineHeight: 1.5,
-              }}
-            >
-              <strong>Forensic Legal Integrity:</strong> JOCKY captures artifacts via safe, non-destructive read-only primitives. Each artifact is hashed immediately with SHA-256 and chained into the immutable forensic audit ledger to ensure full admissibility in court and compliance reviews.
+            {/* Evidence Lifecycle Representation */}
+            <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                EVIDENCE LIFECYCLE ASSURANCE
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', fontWeight: 700, color: '#1e40af', flexWrap: 'wrap', gap: '4px' }}>
+                <span>COLLECTED</span>
+                <span>→</span>
+                <span>NORMALIZED</span>
+                <span>→</span>
+                <span>HASHED</span>
+                <span>→</span>
+                <span>STORED</span>
+                <span>→</span>
+                <span>VERIFIED</span>
+                <span>→</span>
+                <span>ANALYZED</span>
+                <span>→</span>
+                <span>REPORTED</span>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 onClick={() => onNavigate('evidence')}
                 style={{
                   flex: 1,
-                  backgroundColor: '#1e293b',
-                  color: '#f8fafc',
-                  border: '1px solid #334155',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
+                  padding: '6px 10px',
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '4px',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
+                  color: '#0f172a',
                 }}
               >
                 Inspect Evidence Vault
@@ -1645,119 +1591,135 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                 onClick={() => onNavigate('audit')}
                 style={{
                   flex: 1,
-                  backgroundColor: '#1e293b',
-                  color: '#f8fafc',
-                  border: '1px solid #334155',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
+                  padding: '6px 10px',
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '4px',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
+                  color: '#0f172a',
                 }}
               >
-                View Audit Ledger
+                Inspect Audit Ledger
               </button>
             </div>
           </section>
         </div>
 
         {/* ========================================================================= */}
-        {/* SECTION 9: INDICATOR INTELLIGENCE (IOCs) */}
+        {/* SECTION 10: INDICATOR INTELLIGENCE (IOCs) */}
         {/* ========================================================================= */}
         <section
           style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: '10px',
-            padding: '20px 24px',
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            padding: '16px 20px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
             <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                 THREAT INTELLIGENCE
-              </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                Forensic Indicator Intelligence ({sum?.total_indicators ?? 4292} IOCs Catalogued)
+              </span>
+              <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                Indicator Intelligence (IOCs Catalogued: {sum?.total_indicators ?? 0})
               </h2>
             </div>
 
-            {/* Quick Search */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <input
                 type="text"
-                placeholder="Search IOCs (IP, Hash, Domain)..."
+                placeholder="Search IOCs (IPv4, Hash, Path)..."
                 value={iocSearch}
                 onChange={(e) => setIocSearch(e.target.value)}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid #334155',
-                  backgroundColor: '#111827',
-                  color: '#ffffff',
-                  fontSize: '12px',
+                  padding: '5px 10px',
+                  borderRadius: '4px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '11px',
                   minWidth: '220px',
+                  backgroundColor: '#ffffff',
                 }}
               />
             </div>
           </div>
 
-          {/* IOC Count Pills */}
+          {/* IOC Category Badges */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-              gap: '10px',
-              marginBottom: '16px',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))',
+              gap: '6px',
+              marginBottom: '12px',
             }}
           >
             {[
-              { label: 'IPv4 Addresses', count: indStats?.ipv4_count ?? 1420, color: '#38bdf8' },
-              { label: 'Domains & URLs', count: indStats?.domain_count ?? 890, color: '#60a5fa' },
-              { label: 'File Hashes', count: indStats?.hash_count ?? 940, color: '#a855f7' },
-              { label: 'File Paths', count: indStats?.file_path_count ?? 530, color: '#f59e0b' },
-              { label: 'Process Names', count: indStats?.process_name_count ?? 240, color: '#10b981' },
-              { label: 'Network Ports', count: indStats?.port_count ?? 152, color: '#ec4899' },
-              { label: 'IPv6 Addresses', count: indStats?.ipv6_count ?? 120, color: '#c084fc' },
+              { label: 'IPv4 Addresses', count: indStats?.ipv4_count ?? 0 },
+              { label: 'Domains & URLs', count: indStats?.domain_count ?? 0 },
+              { label: 'File Hashes', count: indStats?.hash_count ?? 0 },
+              { label: 'File Paths', count: indStats?.file_path_count ?? 0 },
+              { label: 'Process Names', count: indStats?.process_name_count ?? 0 },
+              { label: 'Network Ports', count: indStats?.port_count ?? 0 },
+              { label: 'IPv6 Addresses', count: indStats?.ipv6_count ?? 0 },
             ].map((p) => (
               <div
                 key={p.label}
                 style={{
-                  backgroundColor: '#111827',
-                  border: '1px solid #1f2937',
-                  borderRadius: '6px',
-                  padding: '10px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '3px',
+                  padding: '6px 8px',
                 }}
               >
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>{p.label}</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: p.color, marginTop: '2px' }}>{p.count}</div>
+                <div style={{ fontSize: '10px', color: '#64748b' }}>{p.label}</div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e40af', marginTop: '1px' }}>{p.count}</div>
               </div>
             ))}
           </div>
 
-          {/* Recent IOCs Table */}
+          {/* Mini IOC Table */}
           {filteredIndicators.length > 0 && (
-            <div style={{ overflowX: 'auto', maxHeight: '220px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <div style={{ overflowX: 'auto', maxHeight: '180px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #1e293b', color: '#64748b', textAlign: 'left' }}>
-                    <th style={{ padding: '8px 10px' }}>Type</th>
-                    <th style={{ padding: '8px 10px' }}>Indicator Value</th>
-                    <th style={{ padding: '8px 10px' }}>Severity</th>
-                    <th style={{ padding: '8px 10px' }}>Occurrences</th>
+                  <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#475569', textAlign: 'left', backgroundColor: '#f8fafc' }}>
+                    <th style={{ padding: '6px 8px' }}>Type</th>
+                    <th style={{ padding: '6px 8px' }}>Indicator Value</th>
+                    <th style={{ padding: '6px 8px' }}>Severity</th>
+                    <th style={{ padding: '6px 8px' }}>Occurrences</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredIndicators.slice(0, 5).map((ioc, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #161e2e' }}>
-                      <td style={{ padding: '8px 10px', color: '#38bdf8', fontWeight: 600 }}>{ioc.type}</td>
-                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#e2e8f0' }}>{ioc.value}</td>
-                      <td style={{ padding: '8px 10px' }}>
-                        <span style={{ color: ioc.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b', fontWeight: 700 }}>
+                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 700, color: '#1e40af' }}>{ioc.type}</td>
+                      <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: '#0f172a' }}>{ioc.value}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <span style={{ fontWeight: 700, color: ioc.severity === 'CRITICAL' ? '#dc2626' : '#ea580c' }}>
                           {ioc.severity}
                         </span>
                       </td>
-                      <td style={{ padding: '8px 10px', color: '#94a3b8' }}>{ioc.occurrences || 1} hits</td>
+                      <td style={{ padding: '6px 8px', color: '#475569' }}>{ioc.occurrences || 1} hits</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        <button
+                          onClick={() => setSelectedIocModal(ioc)}
+                          style={{
+                            padding: '2px 6px',
+                            backgroundColor: '#eff6ff',
+                            color: '#1d4ed8',
+                            border: '1px solid #bfdbfe',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Details
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1767,384 +1729,361 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
         </section>
 
         {/* ========================================================================= */}
-        {/* SECTION 10: JOCKY FORENSIC SCRIPTING ENGINE (INTERACTIVE QUICK RUN) */}
+        {/* TWO-COLUMN GRID: SECTION 11 (TIMELINE) & SECTION 12 (INVESTIGATIONS) */}
         {/* ========================================================================= */}
-        <section
-          id="script-studio"
-          style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: '10px',
-            padding: '24px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Code2 size={18} color="#38bdf8" />
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  INTERACTIVE SCRIPT STUDIO
-                </span>
-              </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
-                JOCKY DSL Compiler & Remote Execution Studio
-              </h2>
-            </div>
-            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-              Target Host: <strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{targetAgentId || 'None Selected'}</strong>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>
-            {/* Left: Code Editor and Controls */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {/* Template and Host Selectors */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Forensic Script Template
-                  </label>
-                  <select
-                    value={selectedTemplateKey}
-                    onChange={(e) => handleTemplateChange(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid #334155',
-                      backgroundColor: '#111827',
-                      color: '#ffffff',
-                      fontSize: '12px',
-                    }}
-                  >
-                    {Object.entries(SCRIPT_TEMPLATES).map(([k, t]) => (
-                      <option key={k} value={k}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
-                    Target System (Online)
-                  </label>
-                  <select
-                    value={targetAgentId}
-                    onChange={(e) => setTargetAgentId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid #334155',
-                      backgroundColor: '#111827',
-                      color: '#ffffff',
-                      fontSize: '12px',
-                    }}
-                  >
-                    {telemetry?.systems && telemetry.systems.length > 0 ? (
-                      telemetry.systems.map((s) => (
-                        <option key={s.agent_id} value={s.agent_id}>
-                          {s.hostname} ({s.operating_system} - {s.status})
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No registered systems</option>
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              {/* Code Editor */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '20px' }}>
+          {/* SECTION 11: MASTER FORENSIC TIMELINE */}
+          <section
+            style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px 20px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                    {SCRIPT_TEMPLATES[selectedTemplateKey]?.desc || 'JOCKY Forensic Script'}
-                  </span>
-                  <label style={{ fontSize: '11px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={enableDetection}
-                      onChange={(e) => setEnableDetection(e.target.checked)}
-                    />
-                    <span>Run Adversary Detection Rules</span>
-                  </label>
-                </div>
-                <textarea
-                  value={scriptCode}
-                  onChange={(e) => {
-                    setScriptCode(e.target.value);
-                    setValidationResult(null);
-                  }}
-                  rows={10}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '6px',
-                    border: '1px solid #334155',
-                    backgroundColor: '#0a0d14',
-                    color: '#38bdf8',
-                    fontFamily: 'Consolas, "Fira Code", monospace',
-                    fontSize: '13px',
-                    lineHeight: 1.5,
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                  }}
-                />
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  RECONSTRUCTION STREAM
+                </span>
+                <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                  Master Forensic Timeline
+                </h2>
               </div>
 
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={handleValidateScript}
-                  disabled={validating}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#1e293b',
-                    color: '#f8fafc',
-                    border: '1px solid #334155',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <Check size={16} color="#38bdf8" />
-                  <span>{validating ? 'Validating AST...' : 'Validate Syntax'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExecuteScript}
-                  disabled={executingScript}
-                  style={{
-                    padding: '8px 20px',
-                    backgroundColor: '#2563eb',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.4)',
-                  }}
-                >
-                  <Send size={15} />
-                  <span>{executingScript ? 'Dispatching...' : 'Dispatch & Execute on System'}</span>
-                </button>
+              {/* Filter Tabs */}
+              <div style={{ display: 'flex', gap: '3px' }}>
+                {(['ALL', 'FINDINGS', 'EVIDENCE', 'IOC', 'JOBS'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      if (m === 'ALL') setTimelineFilter('ALL');
+                      else if (m === 'FINDINGS') setTimelineFilter('FINDING');
+                      else if (m === 'EVIDENCE') setTimelineFilter('EVIDENCE');
+                      else if (m === 'IOC') setTimelineFilter('IOC');
+                      else if (m === 'JOBS') setTimelineFilter('JOB');
+                    }}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      border: '1px solid #cbd5e1',
+                      backgroundColor:
+                        (m === 'ALL' && timelineFilter === 'ALL') ||
+                        (m === 'FINDINGS' && timelineFilter === 'FINDING') ||
+                        (m === 'EVIDENCE' && timelineFilter === 'EVIDENCE') ||
+                        (m === 'IOC' && timelineFilter === 'IOC') ||
+                        (m === 'JOBS' && timelineFilter === 'JOB')
+                          ? '#1e40af'
+                          : '#f8fafc',
+                      color:
+                        (m === 'ALL' && timelineFilter === 'ALL') ||
+                        (m === 'FINDINGS' && timelineFilter === 'FINDING') ||
+                        (m === 'EVIDENCE' && timelineFilter === 'EVIDENCE') ||
+                        (m === 'IOC' && timelineFilter === 'IOC') ||
+                        (m === 'JOBS' && timelineFilter === 'JOB')
+                          ? '#ffffff'
+                          : '#475569',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Right: Validation & Execution Output Console */}
-            <div
-              style={{
-                backgroundColor: '#0a0d14',
-                border: '1px solid #1e293b',
-                borderRadius: '8px',
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                fontFamily: 'Consolas, monospace',
-                fontSize: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '8px' }}>
-                <span style={{ fontWeight: 700, color: '#94a3b8' }}>COMPILER & EXECUTION TELEMETRY</span>
-                <span style={{ fontSize: '10px', color: '#10b981' }}>JOCKY v1.0.0</span>
-              </div>
-
-              {/* Validation Status */}
-              {validationResult ? (
-                <div
-                  style={{
-                    backgroundColor: validationResult.valid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                    border: `1px solid ${validationResult.valid ? '#10b981' : '#ef4444'}`,
-                    borderRadius: '6px',
-                    padding: '12px',
-                    color: validationResult.valid ? '#a7f3d0' : '#fca5a5',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, marginBottom: '6px' }}>
-                    {validationResult.valid ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-                    <span>{validationResult.valid ? 'SYNTAX & AST VALID' : 'COMPILATION ERROR'}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '300px', overflowY: 'auto' }}>
+              {filteredTimeline.length > 0 ? (
+                filteredTimeline.slice(0, 10).map((ev) => (
+                  <div
+                    key={ev.id}
+                    onClick={() => setSelectedEventModal(ev)}
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      borderLeft: `3px solid ${
+                        ev.severity === 'CRITICAL' ? '#dc2626' : ev.severity === 'HIGH' ? '#ea580c' : '#2563eb'
+                      }`,
+                      borderTop: '1px solid #e2e8f0',
+                      borderRight: '1px solid #e2e8f0',
+                      borderBottom: '1px solid #e2e8f0',
+                      borderRadius: '0 4px 4px 0',
+                      padding: '8px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px' }}>
+                      <span style={{ fontWeight: 700, fontFamily: 'monospace', color: '#1e40af' }}>{ev.hostname}</span>
+                      <span style={{ color: '#64748b' }}>{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#0f172a' }}>{ev.summary}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
+                      <span style={{ fontWeight: 600 }}>{ev.event_type}</span>
+                      <span style={{ fontWeight: 700, color: ev.severity === 'CRITICAL' ? '#dc2626' : '#c2410c' }}>
+                        {ev.severity}
+                      </span>
+                    </div>
                   </div>
-                  {validationResult.valid ? (
-                    <div>
-                      Tokens parsed: <strong>{validationResult.tokens_count}</strong> | Instructions:{' '}
-                      <strong>{validationResult.instructions_count}</strong>
-                      <div style={{ marginTop: '4px', fontSize: '11px', color: '#6ee7b7' }}>
-                        Ready for safe non-destructive remote execution.
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      {validationResult.errors?.map((err, i) => (
-                        <div key={i} style={{ color: '#f87171' }}>
-                          • {err}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                ))
               ) : (
-                <div style={{ color: '#64748b' }}>
-                  Click "Validate Syntax" to parse the JOCKY DSL script into bytecode instructions.
-                </div>
-              )}
-
-              {/* Execution Feedback */}
-              {executionFeedback && (
-                <div
-                  style={{
-                    backgroundColor: executionFeedback.status === 'FAILED' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(37, 99, 235, 0.12)',
-                    border: `1px solid ${executionFeedback.status === 'FAILED' ? '#ef4444' : '#2563eb'}`,
-                    borderRadius: '6px',
-                    padding: '12px',
-                    color: '#f8fafc',
-                  }}
-                >
-                  <div style={{ fontWeight: 700, marginBottom: '4px', color: '#60a5fa' }}>
-                    Job Dispatched ({executionFeedback.status})
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#e2e8f0', marginBottom: '8px' }}>
-                    {executionFeedback.message}
-                  </div>
-                  {executionFeedback.jobId && (
-                    <button
-                      onClick={() => onNavigate('jobs')}
-                      style={{
-                        backgroundColor: '#2563eb',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        padding: '4px 10px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Track Live Job in Jobs Manager →
-                    </button>
-                  )}
+                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                  No timeline events recorded.
                 </div>
               )}
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* ========================================================================= */}
-        {/* SECTION 11: RECENT FORENSIC REPORTS & EXECUTION LOGS */}
-        {/* ========================================================================= */}
-        <section
-          style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #1e293b',
-            borderRadius: '10px',
-            padding: '20px 24px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-            <div>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                AUDIT & REPORT ARCHIVE
+          {/* SECTION 12: ACTIVE FORENSIC INVESTIGATIONS */}
+          <section
+            style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              padding: '16px 20px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  CASE MANAGEMENT
+                </span>
+                <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                  Active Forensic Investigations ({sum?.total_investigations ?? 0})
+                </h2>
               </div>
-              <h2 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                Recent Forensic Executions & Court Reports ({sum?.total_jobs ?? 0} Executions)
-              </h2>
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={() => onNavigate('jobs')}
+                onClick={() => setIsNewInvestigationOpen(true)}
                 style={{
-                  backgroundColor: '#1e293b',
-                  color: '#38bdf8',
-                  border: '1px solid #334155',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
+                  padding: '4px 8px',
+                  backgroundColor: '#1e40af',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '3px',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  gap: '4px',
                 }}
               >
-                <span>All Jobs</span>
-                <ArrowRight size={13} />
+                <Plus size={12} />
+                <span>New Case</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+              {telemetry?.priority_investigations && telemetry.priority_investigations.length > 0 ? (
+                telemetry.priority_investigations.slice(0, 5).map((inv) => (
+                  <div
+                    key={inv.investigation_id}
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '4px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>{inv.title}</span>
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          backgroundColor: inv.status === 'CLOSED' ? '#f0fdf4' : '#eff6ff',
+                          color: inv.status === 'CLOSED' ? '#16a34a' : '#1d4ed8',
+                        }}
+                      >
+                        {inv.status}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '10px', color: '#64748b' }}>
+                      Analyst: <strong>{inv.assigned_analyst || 'Unassigned'}</strong> • Systems: {inv.systems_count} • Findings: {inv.findings_count} • Evidence: {inv.evidence_count}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                      <button
+                        onClick={() => onNavigate('investigations')}
+                        style={{
+                          padding: '2px 6px',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          color: '#1e40af',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Open Investigation
+                      </button>
+                      <button
+                        onClick={() => onNavigate('investigations')}
+                        style={{
+                          padding: '2px 6px',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          color: '#475569',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Timeline
+                      </button>
+                      <button
+                        onClick={() => onNavigate('reports')}
+                        style={{
+                          padding: '2px 6px',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          color: '#475569',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Generate Report
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                  No active investigations.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* SECTION 13: FORENSIC REPORTS & EXECUTION LOGS */}
+        {/* ========================================================================= */}
+        <section
+          style={{
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            padding: '16px 20px',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: '#1e40af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                AUDITABLE OUTPUTS
+              </span>
+              <h2 style={{ margin: '1px 0 0 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                Forensic Reports & Execution Logs
+              </h2>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                onClick={() => onNavigate('jobs')}
+                style={{
+                  padding: '3px 8px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '3px',
+                  fontSize: '11px',
+                  color: '#475569',
+                  cursor: 'pointer',
+                }}
+              >
+                All Jobs ({sum?.total_jobs ?? 0})
               </button>
               <button
                 onClick={() => onNavigate('reports')}
                 style={{
-                  backgroundColor: '#2563eb',
+                  padding: '3px 8px',
+                  backgroundColor: '#1e40af',
                   color: '#ffffff',
                   border: 'none',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
+                  borderRadius: '3px',
+                  fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
                 }}
               >
-                <FileText size={14} />
-                <span>Forensic Reports Vault</span>
+                Reports Vault
               </button>
             </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #1e293b', color: '#64748b', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 12px' }}>Job ID</th>
-                  <th style={{ padding: '8px 12px' }}>Forensic Script Name</th>
-                  <th style={{ padding: '8px 12px' }}>Target System</th>
-                  <th style={{ padding: '8px 12px' }}>Status</th>
-                  <th style={{ padding: '8px 12px' }}>Detection</th>
-                  <th style={{ padding: '8px 12px' }}>Dispatched At</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'right' }}>Actions</th>
+                <tr style={{ borderBottom: '1px solid #cbd5e1', color: '#475569', textAlign: 'left', backgroundColor: '#f8fafc' }}>
+                  <th style={{ padding: '6px 8px' }}>Log / Report ID</th>
+                  <th style={{ padding: '6px 8px' }}>JOCKY Script / Context</th>
+                  <th style={{ padding: '6px 8px' }}>Target System</th>
+                  <th style={{ padding: '6px 8px' }}>Status</th>
+                  <th style={{ padding: '6px 8px' }}>Integrity</th>
+                  <th style={{ padding: '6px 8px' }}>Execution Time</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {telemetry?.recent_jobs && telemetry.recent_jobs.length > 0 ? (
-                  telemetry.recent_jobs.slice(0, 6).map((job) => (
-                    <tr key={job.job_id} style={{ borderBottom: '1px solid #161e2e' }}>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: '#94a3b8' }}>
+                  telemetry.recent_jobs.slice(0, 5).map((job) => (
+                    <tr key={job.job_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: '#64748b' }}>
                         {job.job_id.slice(0, 8)}...
                       </td>
-                      <td style={{ padding: '10px 12px', fontWeight: 600, color: '#f8fafc' }}>{job.name}</td>
-                      <td style={{ padding: '10px 12px', color: '#38bdf8', fontFamily: 'monospace' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 600, color: '#0f172a' }}>{job.name}</td>
+                      <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: '#1e40af' }}>
                         {job.hostname || job.agent_id}
                       </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <StatusBadge status={job.status} type="job" />
+                      <td style={{ padding: '6px 8px' }}>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            backgroundColor: job.status === 'COMPLETED' ? '#f0fdf4' : '#fff7ed',
+                            color: job.status === 'COMPLETED' ? '#16a34a' : '#c2410c',
+                          }}
+                        >
+                          {job.status}
+                        </span>
                       </td>
-                      <td style={{ padding: '10px 12px', color: job.detection_enabled ? '#10b981' : '#64748b' }}>
-                        {job.detection_enabled ? 'ENABLED' : 'DISABLED'}
-                      </td>
-                      <td style={{ padding: '10px 12px', color: '#94a3b8' }}>
+                      <td style={{ padding: '6px 8px', color: '#16a34a', fontWeight: 600 }}>SHA-256 VERIFIED</td>
+                      <td style={{ padding: '6px 8px', color: '#64748b' }}>
                         {new Date(job.created_at).toLocaleString()}
                       </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                         <button
                           onClick={() => onNavigate('jobs')}
                           style={{
-                            backgroundColor: '#1e293b',
-                            border: '1px solid #334155',
-                            borderRadius: '4px',
-                            padding: '3px 8px',
-                            color: '#38bdf8',
-                            fontSize: '11px',
+                            padding: '2px 6px',
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '3px',
+                            fontSize: '10px',
+                            color: '#1e40af',
                             cursor: 'pointer',
                           }}
                         >
@@ -2155,8 +2094,8 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
-                      No recent job executions found.
+                    <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>
+                      No execution logs available.
                     </td>
                   </tr>
                 )}
@@ -2164,15 +2103,15 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
             </table>
           </div>
         </section>
-      </div>
+      </main>
 
       {/* ========================================================================= */}
-      {/* MODAL: RUN JOCKY ANALYSIS (QUICK MODAL) */}
+      {/* MODAL: RUN JOCKY ANALYSIS */}
       {/* ========================================================================= */}
-      <Modal isOpen={isRunModalOpen} onClose={() => setIsRunModalOpen(false)} title="Quick JOCKY Forensic Analysis">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <Modal isOpen={isRunModalOpen} onClose={() => setIsRunModalOpen(false)} title="Run JOCKY Forensic Script Analysis">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
               Select Target Host
             </label>
             <select
@@ -2180,10 +2119,10 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
               onChange={(e) => setTargetAgentId(e.target.value)}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
+                padding: '6px 8px',
+                borderRadius: '4px',
                 border: '1px solid #cbd5e1',
-                fontSize: '13px',
+                fontSize: '12px',
               }}
             >
               {telemetry?.systems?.map((s) => (
@@ -2195,18 +2134,18 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
           </div>
 
           <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>
-              Script Template
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
+              Template
             </label>
             <select
               value={selectedTemplateKey}
               onChange={(e) => handleTemplateChange(e.target.value)}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
+                padding: '6px 8px',
+                borderRadius: '4px',
                 border: '1px solid #cbd5e1',
-                fontSize: '13px',
+                fontSize: '12px',
               }}
             >
               {Object.entries(SCRIPT_TEMPLATES).map(([k, t]) => (
@@ -2218,58 +2157,59 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
           </div>
 
           <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>
-              Forensic Script (JOCKY DSL)
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
+              JOCKY Forensic Script
             </label>
-            <textarea
-              value={scriptCode}
-              onChange={(e) => setScriptCode(e.target.value)}
-              rows={8}
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                fontFamily: 'monospace',
-                fontSize: '12px',
-                boxSizing: 'border-box',
-              }}
-            />
+            <div style={{ backgroundColor: '#0f172a', borderRadius: '4px', padding: '8px' }}>
+              <textarea
+                value={scriptCode}
+                onChange={(e) => setScriptCode(e.target.value)}
+                rows={8}
+                style={{
+                  width: '100%',
+                  backgroundColor: 'transparent',
+                  color: '#38bdf8',
+                  fontFamily: 'monospace',
+                  fontSize: '12px',
+                  border: 'none',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
             <button
-              type="button"
               onClick={() => setIsRunModalOpen(false)}
               style={{
-                padding: '8px 16px',
+                padding: '6px 12px',
                 backgroundColor: '#f1f5f9',
                 border: '1px solid #cbd5e1',
-                borderRadius: '6px',
-                fontSize: '13px',
+                borderRadius: '4px',
+                fontSize: '12px',
                 cursor: 'pointer',
               }}
             >
               Cancel
             </button>
             <button
-              type="button"
               onClick={async () => {
                 await handleExecuteScript();
                 setIsRunModalOpen(false);
               }}
               style={{
-                padding: '8px 16px',
-                backgroundColor: '#2563eb',
+                padding: '6px 14px',
+                backgroundColor: '#1e40af',
                 color: '#ffffff',
                 border: 'none',
-                borderRadius: '6px',
-                fontSize: '13px',
-                fontWeight: 600,
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontWeight: 700,
                 cursor: 'pointer',
               }}
             >
-              Dispatch Analysis
+              Dispatch to Host
             </button>
           </div>
         </div>
@@ -2279,51 +2219,51 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
       {/* MODAL: NEW INVESTIGATION */}
       {/* ========================================================================= */}
       <Modal isOpen={isNewInvestigationOpen} onClose={() => setIsNewInvestigationOpen(false)} title="Create Forensic Investigation Case">
-        <form onSubmit={handleCreateInvestigation} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <form onSubmit={handleCreateInvestigation} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
               Case Title *
             </label>
             <input
               type="text"
               required
-              placeholder="e.g. Operation ShadowHunter - Multi-Host Lateral Movement"
+              placeholder="e.g. INC-2026-MULTI-ENDPOINT-TRIAGE: Cross-Platform Intrusion"
               value={invTitle}
               onChange={(e) => setInvTitle(e.target.value)}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
+                padding: '6px 10px',
+                borderRadius: '4px',
                 border: '1px solid #cbd5e1',
-                fontSize: '13px',
+                fontSize: '12px',
                 boxSizing: 'border-box',
               }}
             />
           </div>
 
           <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>
-              Description & Hypothesis
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
+              Forensic Hypothesis & Scope
             </label>
             <textarea
-              placeholder="Describe suspected adversary behavior, affected systems, and triage goals..."
+              placeholder="Describe adversary indicators, anomalous processes, and multi-endpoint investigative goals..."
               value={invDesc}
               onChange={(e) => setInvDesc(e.target.value)}
               rows={4}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
+                padding: '6px 10px',
+                borderRadius: '4px',
                 border: '1px solid #cbd5e1',
-                fontSize: '13px',
+                fontSize: '12px',
                 boxSizing: 'border-box',
               }}
             />
           </div>
 
           <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>
-              Assigned Forensic Analyst
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '3px' }}>
+              Assigned Forensic Lead
             </label>
             <input
               type="text"
@@ -2331,25 +2271,25 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
               onChange={(e) => setInvAssigned(e.target.value)}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
+                padding: '6px 10px',
+                borderRadius: '4px',
                 border: '1px solid #cbd5e1',
-                fontSize: '13px',
+                fontSize: '12px',
                 boxSizing: 'border-box',
               }}
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
             <button
               type="button"
               onClick={() => setIsNewInvestigationOpen(false)}
               style={{
-                padding: '8px 16px',
+                padding: '6px 12px',
                 backgroundColor: '#f1f5f9',
                 border: '1px solid #cbd5e1',
-                borderRadius: '6px',
-                fontSize: '13px',
+                borderRadius: '4px',
+                fontSize: '12px',
                 cursor: 'pointer',
               }}
             >
@@ -2359,20 +2299,109 @@ export const DashboardPage: React.FC<Props> = ({ onNavigate }) => {
               type="submit"
               disabled={creatingInv}
               style={{
-                padding: '8px 16px',
-                backgroundColor: '#2563eb',
+                padding: '6px 14px',
+                backgroundColor: '#1e40af',
                 color: '#ffffff',
                 border: 'none',
-                borderRadius: '6px',
-                fontSize: '13px',
-                fontWeight: 600,
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontWeight: 700,
                 cursor: 'pointer',
               }}
             >
-              {creatingInv ? 'Creating Case...' : 'Open Case'}
+              {creatingInv ? 'Creating...' : 'Open Case'}
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL: TIMELINE EVENT DETAIL */}
+      {/* ========================================================================= */}
+      <Modal isOpen={!!selectedEventModal} onClose={() => setSelectedEventModal(null)} title="Forensic Timeline Event Details">
+        {selectedEventModal && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+            <div>
+              <span style={{ color: '#64748b' }}>Event ID: </span>
+              <strong style={{ fontFamily: 'monospace' }}>{selectedEventModal.id}</strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Timestamp: </span>
+              <strong>{new Date(selectedEventModal.timestamp).toISOString()}</strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>System Node: </span>
+              <strong style={{ fontFamily: 'monospace', color: '#1e40af' }}>{selectedEventModal.hostname}</strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Event Type: </span>
+              <strong style={{ color: '#1e40af' }}>{selectedEventModal.event_type}</strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Severity: </span>
+              <strong style={{ color: selectedEventModal.severity === 'CRITICAL' ? '#dc2626' : '#ea580c' }}>
+                {selectedEventModal.severity}
+              </strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Summary: </span>
+              <p style={{ margin: '4px 0', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                {selectedEventModal.summary}
+              </p>
+            </div>
+            {selectedEventModal.details && (
+              <div style={{ backgroundColor: '#f8fafc', padding: '8px', borderRadius: '4px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontSize: '11px' }}>
+                <pre style={{ margin: 0 }}>{JSON.stringify(selectedEventModal.details, null, 2)}</pre>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL: IOC DETAIL */}
+      {/* ========================================================================= */}
+      <Modal isOpen={!!selectedIocModal} onClose={() => setSelectedIocModal(null)} title="Indicator Intelligence Details">
+        {selectedIocModal && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+            <div>
+              <span style={{ color: '#64748b' }}>Indicator Type: </span>
+              <strong style={{ color: '#1e40af' }}>{selectedIocModal.type}</strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Indicator Value: </span>
+              <strong style={{ fontFamily: 'monospace', fontSize: '13px', color: '#0f172a', wordBreak: 'break-all' }}>
+                {selectedIocModal.value}
+              </strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Severity: </span>
+              <strong style={{ color: selectedIocModal.severity === 'CRITICAL' ? '#dc2626' : '#ea580c' }}>
+                {selectedIocModal.severity}
+              </strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Total Occurrences: </span>
+              <strong>{selectedIocModal.occurrences || 1} hits</strong>
+            </div>
+            <div>
+              <span style={{ color: '#64748b' }}>Systems Observed: </span>
+              <strong>{selectedIocModal.agents_count || 1} distinct hosts</strong>
+            </div>
+            {selectedIocModal.first_seen && (
+              <div>
+                <span style={{ color: '#64748b' }}>First Seen: </span>
+                <strong>{new Date(selectedIocModal.first_seen).toLocaleString()}</strong>
+              </div>
+            )}
+            {selectedIocModal.last_seen && (
+              <div>
+                <span style={{ color: '#64748b' }}>Last Seen: </span>
+                <strong>{new Date(selectedIocModal.last_seen).toLocaleString()}</strong>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -5,7 +5,7 @@ Structured models for multi-system map, adversary matrix, timeline, and correlat
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class SystemNode(BaseModel):
@@ -53,7 +53,7 @@ class CommandCenterSummary(BaseModel):
 class TimelineEventSummary(BaseModel):
     id: str
     timestamp: datetime
-    event_type: str
+    event_type: str  # EVIDENCE, FINDING, JOB, IOC, INVESTIGATION, INTEGRITY EVENT
     hostname: str
     summary: str
     severity: str
@@ -80,6 +80,7 @@ class PriorityInvestigationSummary(BaseModel):
     status: str
     assigned_analyst: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
     systems_count: int = 0
     findings_count: int = 0
     evidence_count: int = 0
@@ -91,9 +92,15 @@ class EvidenceIntegritySummary(BaseModel):
     verified_records: int
     tamper_detected: int
     custody_events: int
+    verified_percentage: float = 0.0
+    last_verification_timestamp: Optional[str] = None
 
 
 class IndicatorStatsSummary(BaseModel):
+    total_indicators: int = 0
+    new_indicators: int = 0
+    correlated_indicators: int = 0
+    systems_affected: int = 0
     ipv4_count: int = 0
     ipv6_count: int = 0
     domain_count: int = 0
@@ -111,8 +118,20 @@ class RecentJobSummary(BaseModel):
     hostname: str
     status: str
     detection_enabled: bool
+    findings_generated: int = 0
     created_at: datetime
     completed_at: Optional[datetime] = None
+
+
+class ReportSummary(BaseModel):
+    report_id: str
+    investigation_id: str
+    investigation_title: str
+    generated_by: str
+    generated_at: datetime
+    evidence_count: int = 0
+    finding_count: int = 0
+    integrity_status: str = "VERIFIED"
 
 
 class CommandCenterResponse(BaseModel):
@@ -127,3 +146,4 @@ class CommandCenterResponse(BaseModel):
     evidence_integrity: EvidenceIntegritySummary
     indicator_stats: IndicatorStatsSummary
     recent_jobs: List[RecentJobSummary]
+    reports: List[ReportSummary] = []

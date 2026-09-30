@@ -39,8 +39,8 @@ export const App: React.FC = () => {
         height: '100vh',
         width: '100vw',
         overflow: 'hidden',
-        backgroundColor: '#0a0d14',
-        color: '#e2e8f0',
+        backgroundColor: '#f8fafc',
+        color: '#0f172a',
         fontFamily:
           '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
       }}
