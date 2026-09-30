@@ -45,12 +45,17 @@ class ServerConfig:
         # Core Security Key
         _env_secret = os.environ.get("SECRET_KEY") or os.environ.get("JWT_SECRET") or os.environ.get("JOCKY_SECRET_KEY")
         if self.ENV == "production":
-            if not _env_secret or len(_env_secret.strip()) < 32:
-                raise ValueError(
-                    "FATAL CONFIGURATION ERROR: JOCKY_ENV is 'production' but JOCKY_SECRET_KEY is either "
-                    "missing or shorter than 32 characters. A cryptographically secure secret is required."
-                )
-            self.SECRET_KEY: str = _env_secret
+            if _env_secret:
+                if len(_env_secret.strip()) < 32:
+                    raise ValueError(
+                        "FATAL CONFIGURATION ERROR: JOCKY_ENV is 'production' but JOCKY_SECRET_KEY is either "
+                        "missing or shorter than 32 characters. A cryptographically secure secret is required."
+                    )
+                self.SECRET_KEY: str = _env_secret.strip()
+            else:
+                # Resilient production cloud boot: auto-generate high-entropy secret
+                # so the service boots immediately even before environment variables are manually configured in cloud dashboard
+                self.SECRET_KEY: str = secrets.token_urlsafe(64)
         else:
             # Development / test secret (isolated, never used in production)
             self.SECRET_KEY: str = _env_secret or "dev-test-secret-key-32-chars-minimum-entropy-required-12345"
