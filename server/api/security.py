@@ -30,46 +30,51 @@ def get_current_user(
         token = authorization.split("Bearer ", 1)[1].strip()
 
     if token:
-        payload = decode_access_token(token)
-        jti = payload.get("jti")
+        try:
+            payload = decode_access_token(token)
+            jti = payload.get("jti")
 
-        # Check server-side revocation
-        if jti:
-            revoked = db.query(RevokedTokenModel).filter(RevokedTokenModel.jti == jti).first()
-            if revoked:
+            # Check server-side revocation
+            if jti:
+                revoked = db.query(RevokedTokenModel).filter(RevokedTokenModel.jti == jti).first()
+                if revoked:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Authentication token has been revoked.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+            user_id = payload.get("sub")
+            user = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+            if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication token has been revoked.",
+                    detail="User account no longer exists.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
-        user_id = payload.get("sub")
-        user = db.query(UserModel).filter(UserModel.user_id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account no longer exists.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account is deactivated.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        now = datetime.now(timezone.utc)
-        if user.locked_until:
-            locked_tz = user.locked_until.replace(tzinfo=timezone.utc) if user.locked_until.tzinfo is None else user.locked_until
-            if locked_tz > now:
+            if not user.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User account is temporarily locked due to excessive failed logins.",
+                    detail="User account is deactivated.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
-        return user
+            now = datetime.now(timezone.utc)
+            if user.locked_until:
+                locked_tz = user.locked_until.replace(tzinfo=timezone.utc) if user.locked_until.tzinfo is None else user.locked_until
+                if locked_tz > now:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="User account is temporarily locked due to excessive failed logins.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+            return user
+        except HTTPException:
+            # Fall back to Analyst Key if present, otherwise re-raise 401
+            if not (x_analyst_key and config.ANALYST_SECRET_KEY and x_analyst_key == config.ANALYST_SECRET_KEY):
+                raise
 
     # 2. Check legacy Analyst Secret Key (Step 4 backward compatibility)
     if x_analyst_key and config.ANALYST_SECRET_KEY and x_analyst_key == config.ANALYST_SECRET_KEY:

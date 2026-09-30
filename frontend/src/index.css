@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base resets & dark theme adjustments */
+html, body {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background-color: #0a0d14;
+  color: #e2e8f0;
+}
+
+*, *::before, *::after {
+  box-sizing: inherit;
+}

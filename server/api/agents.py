@@ -107,6 +107,7 @@ def register_agent(
         agent.jocky_version = req.jocky_version
         agent.collector_version = req.collector_version
         agent.last_seen = now
+        agent.status = "ONLINE"
         agent.agent_token_hash = token_hash
 
     db.commit()
