@@ -57,6 +57,7 @@ COPY forensics/ ./forensics/
 COPY examples/ ./examples/
 COPY scripts/init_production_db.py ./scripts/init_production_db.py
 COPY cli.py .
+COPY start.py .
 
 # Copy compiled frontend from Stage 1 into /app/frontend/dist
 COPY --from=frontend-builder /build/dist ./frontend/dist
@@ -66,11 +67,11 @@ RUN chown -R jocky:jocky /app
 
 USER jocky
 
-EXPOSE 8000
+EXPOSE 8000 10000
 
 # Health check verifies the production health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://127.0.0.1:8000/health || exit 1
+    CMD curl -f http://127.0.0.1:${PORT:-8000}/health || exit 1
 
-# Launch production ASGI server
-CMD ["python", "-m", "uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--no-access-log"]
+# Launch production ASGI server via cloud bootloader
+CMD ["python", "start.py"]

@@ -57,6 +57,7 @@ JOCKY/
 │   └── database.py        # SQLAlchemy engine supporting PostgreSQL and SQLite
 ├── scripts/
 │   └── init_production_db.py # Production schema creator & 22-table verification
+├── start.py               # Dynamic cloud bootloader (binds to $PORT on Render/Fly/Docker)
 ├── requirements.txt       # Python dependencies (includes psycopg2-binary & gunicorn)
 └── .env.example           # Production environment variable reference
 ```
